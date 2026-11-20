@@ -1,0 +1,16 @@
+[package]
+name = "audio-engine"
+description = "Motor de áudio do app: metrônomo, afinador, dispositivos e latência."
+version.workspace = true
+edition.workspace = true
+
+[features]
+default = ["io"]
+# "io" liga o acesso real a dispositivos (cpal). Sem ele, só a parte de DSP compila,
+# o que permite testar em qualquer máquina.
+io = ["dep:cpal"]
+
+[dependencies]
+cpal = { version = "0.18", optional = true }
+rtrb = "0.4"
+serde = { version = "1", features = ["derive"] }

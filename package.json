@@ -1,0 +1,13 @@
+{
+  "name": "guitar-exercises-app",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.28.0",
+  "scripts": {
+    "dev": "pnpm --filter desktop tauri dev",
+    "build": "pnpm --filter desktop tauri build",
+    "test": "pnpm -r test && cargo test -p audio-engine",
+    "typecheck": "pnpm -r typecheck",
+    "web": "pnpm --filter desktop dev"
+  }
+}
