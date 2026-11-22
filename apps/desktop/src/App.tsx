@@ -103,8 +103,12 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [m]);
 
+  // No celular, a barra vira abas embaixo: as principais ficam à vista, o resto vai para "Mais".
+  const PRIMARY: Route[] = ["hoje", "roadmap", "musicas", "acordes", "ferramentas"];
+  const [moreOpen, setMoreOpen] = useState(false);
+  const isCurrent = (id: Route) => route === id || (route === "exercicio" && prevRoute === id);
   const navButton = (n: { id: Route; icon: ReactNode; key: MessageKey }, i: number) => (
-    <button key={n.id} aria-current={route === n.id || (route === "exercicio" && prevRoute === n.id) ? "page" : undefined} onClick={() => setRoute(n.id)}>
+    <button key={n.id} className={PRIMARY.includes(n.id) ? "nav-primary" : "nav-secondary"} aria-current={isCurrent(n.id) ? "page" : undefined} onClick={() => { setRoute(n.id); setMoreOpen(false); }}>
       {n.icon}
       {t(n.key)}
       <span className="kbd">⌘{i + 1}</span>
@@ -120,10 +124,14 @@ export function App() {
           <i />
           prática
         </div>
-        <nav className="nav" aria-label="Telas">
+        <nav className={`nav${moreOpen ? " more-open" : ""}`} id="nav-sheet" aria-label="Telas">
           {NAV.map((n, i) => navButton(n, i))}
           <div className="nav-sep" />
           {BOTTOM.map((n, i) => navButton(n, i + NAV.length))}
+          <button className={`nav-more${[...NAV, ...BOTTOM].some((n) => !PRIMARY.includes(n.id) && isCurrent(n.id)) ? " has-current" : ""}`} aria-expanded={moreOpen} aria-controls="nav-sheet" onClick={() => setMoreOpen((v) => !v)}>
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><circle cx="4.5" cy="10" r="1.2" /><circle cx="10" cy="10" r="1.2" /><circle cx="15.5" cy="10" r="1.2" /></svg>
+            Mais
+          </button>
         </nav>
         <div className="sidebar-foot">
           <div className="live">

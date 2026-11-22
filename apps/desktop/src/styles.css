@@ -2137,3 +2137,172 @@ button.chord-tile[aria-pressed="true"] {
 .roadmap-phase .rm-compact {
   padding-bottom: 12px;
 }
+
+/* ---------- Celular: abas embaixo e menos respiro ---------- */
+.nav-more {
+  display: none !important;
+}
+@media (max-width: 720px) {
+  .shell {
+    display: block;
+    height: 100%;
+  }
+  .main {
+    height: 100%;
+    border-left: 0;
+    padding-bottom: calc(64px + env(safe-area-inset-bottom));
+  }
+  .main .drag,
+  .sidebar .drag,
+  .wordmark,
+  .sidebar-foot,
+  .nav .kbd,
+  .nav-sep {
+    display: none;
+  }
+  .sidebar {
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 20;
+    padding: 0 6px env(safe-area-inset-bottom);
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: saturate(1.6) blur(16px);
+    -webkit-backdrop-filter: saturate(1.6) blur(16px);
+    border-top: 1px solid var(--line);
+    color: var(--fg);
+  }
+  .nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0;
+  }
+  .nav button {
+    flex: 1 1 0;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    height: 58px;
+    min-width: 0;
+    padding: 0 2px;
+    border-radius: 10px;
+    font-size: 10.5px;
+    line-height: 12px;
+    text-align: center;
+    color: var(--fg-2);
+    white-space: nowrap;
+  }
+  .nav button[aria-current="page"] {
+    background: transparent;
+    color: var(--fg);
+  }
+  .nav .nav-secondary {
+    display: none;
+  }
+  .nav-more {
+    display: flex !important;
+    order: 2;
+  }
+  .nav-more.has-current {
+    color: var(--fg);
+  }
+  .nav-more.has-current svg {
+    color: var(--accent);
+  }
+  .nav .nav-primary {
+    order: 1;
+  }
+  /* "Mais" abre as outras telas numa folha acima das abas. */
+  .nav.more-open .nav-secondary {
+    display: flex;
+    order: 0;
+    flex: 1 1 50%;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 10px;
+    height: 48px;
+    padding: 0 14px;
+    font-size: 15px;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+  }
+  .sidebar:has(.nav.more-open) {
+    background: var(--bg-raised);
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.18);
+  }
+  .nav.more-open .nav-secondary[aria-current="page"] svg {
+    color: var(--accent);
+  }
+  .screen {
+    padding: 20px 16px 32px;
+  }
+  .screen-head {
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    margin-bottom: 20px;
+  }
+  .screen-head .actions {
+    margin-left: 0;
+  }
+  .panel {
+    padding: 16px;
+  }
+  .seg {
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .seg::-webkit-scrollbar {
+    display: none;
+  }
+  .seg button {
+    flex: none;
+  }
+  .field {
+    grid-template-columns: 96px minmax(0, 1fr);
+  }
+  .big-number {
+    font-size: 96px;
+  }
+  .song-detail {
+    padding: 18px 16px 24px;
+  }
+  .song-title {
+    font-size: 24px;
+    line-height: 30px;
+  }
+  .chart {
+    font-size: 16px;
+  }
+  .chord-grid {
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+    gap: 8px;
+  }
+  .chord-tile.lg .chord-name {
+    font-size: 44px;
+  }
+  .trainer-stage {
+    padding: 20px 16px;
+  }
+  .phase-rail {
+    margin-left: -16px;
+    margin-right: -16px;
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+    grid-auto-columns: 168px;
+  }
+  .roadmap-results {
+    margin-left: 0;
+    flex-basis: 100%;
+  }
+  .chords-screen .screen-head .seg {
+    margin-left: 0;
+  }
+}
+
+/* Telas de toque: dicas de teclado não ajudam. */
+@media (hover: none) {
+  .kbd-hint {
+    display: none;
+  }
+}

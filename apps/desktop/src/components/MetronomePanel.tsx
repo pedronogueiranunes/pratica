@@ -45,7 +45,7 @@ export function MetronomePanel({ compact = false }: { compact?: boolean }) {
       <div className="panel-head">
         <h2>{t("metronome.title")}</h2>
         <span className="spacer" />
-        <span className="muted small">Espaço inicia. Setas mudam o bpm.</span>
+        <span className="muted small kbd-hint">Espaço inicia. Setas mudam o bpm.</span>
       </div>
 
       <div className="metro-readout">
