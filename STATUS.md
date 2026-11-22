@@ -1,5 +1,25 @@
 # Status
 
+## Ajustes pedidos em 22/11 (depois da 3A)
+
+### Feito
+- **Atraso dos dispositivos:** Ajustes ganhou "Medir atraso" (só no Mac). O motor abre cada entrada e saída por um instante, a saída em silêncio, e lê o atraso pelos timestamps do stream. Fica guardado neste Mac (`localStorage`, IDs de áudio não valem em outro Mac). Sem medida, aparece "sem medida" em vez de "cerca de 0 ms". O selo de melhor opção só aparece no primeiro da lista quando há medida ou interface de áudio; Bluetooth continua avisado. Recusa medir com metrônomo ou afinador ligados.
+- **Barra lateral no tema claro:** a janela nativa passa a seguir o tema do app (`setTheme`, permissão `core:window:allow-set-theme`). Antes, com o macOS escuro e o app claro, o material translúcido ficava escuro com texto escuro.
+- **Roadmap:** trilho de fases no topo com um quadradinho por exercício (preenchido quando há prática registrada), que também filtra por fase; linhas em colunas (exercício, tipo, meta, práticas) no lugar dos selos; "tab" virou um ícone; grade, fases e timeline no mesmo estilo.
+- **Tap:** anel no acento a cada toque; com movimento reduzido, só um brilho curto.
+- **Acordes (nova tela, ⌘4):** biblioteca com 45 formas consagradas, filtro por tipo e busca por qualquer nome (Em7(9), D/F#, Db7M(9)); acorde fora da tabela ganha formas calculadas a partir das notas, marcadas como "forma calculada". Detalhe com as notas e todas as formas.
+- **Troca de acordes:** acorde atual grande, próximo pequeno, contagem regressiva em tempos, troca a cada 1, 2, 4 ou 8 tempos no metrônomo do app, pares do roadmap (G e C, Am e E, D e A), contagem de trocas pedidas e registro em "Troca de acordes em 1 minuto" com as trocas limpas informadas por você. Abre também pela tela do exercício e pela cifra.
+- **Cifra:** faixa com o diagrama de cada acorde da música, na ordem; clique mostra outra forma.
+
+### Verificações
+- Core: **99 testes passaram** (37 novos de notas, formas e troca), `tsc` passou. Toda forma da tabela e as geradas para 12 acordes fora dela conferem com as notas, abertura de até 4 casas e até 4 dedos.
+- `audio-engine`: **16 testes passaram**, clippy sem avisos, compilado no Linux (ALSA). A medição em si depende do CoreAudio e **não foi executada**.
+- `pnpm typecheck` e `build:web` passaram; Chromium headless: Roadmap claro/escuro/760 px, Acordes, busca, troca rodando 5 s e 11 s, Tap no meio do pulso. Console sem erros; detector da Impeccable sem apontamentos.
+- **Não executado:** app do Mac (medição de atraso, barra lateral com o tema, Tauri compilando a nova permissão), uso real da troca com a guitarra.
+
+### Sobre as capturas de 22/11
+O Roadmap das capturas ainda dizia "As visões de timeline, fases e grid chegam na Fase 1", então o app aberto era a versão da 1A, provavelmente a cópia em Aplicativos. O aviso "iCloud pendente: o arquivo deste dispositivo está incompleto ou contém eventos incompatíveis" tem a mesma causa provável: o build novo, usando o mesmo banco, gravou no log tipos de evento que a versão antiga não conhece. Substituir a cópia em Aplicativos pelo build atual deve resolver; a partir da 3A, versões antigas guardam tipos novos em vez de travar.
+
 ## Fase 3, parte 3A: músicas e cifras implementadas, validação no Mac pendente (22/11/2026)
 
 Plano e decisões em `docs/06-fase-3-plano.md`. 3B (playlists na interface, exportar/importar, web offline) e 3C (braço completo) ainda não começaram. Nada foi enviado ao GitHub: os commits estão só na `main` local.
