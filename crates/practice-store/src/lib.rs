@@ -38,7 +38,7 @@ impl Store {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .map_err(err)?;
-        if version > 1 {
+        if version > 2 {
             return Err("Este banco foi criado por uma versão mais nova do Prática.".into());
         }
         let store = Self { connection };
@@ -62,7 +62,33 @@ impl Store {
           CREATE TABLE IF NOT EXISTS local_meta (key TEXT PRIMARY KEY,value_json TEXT NOT NULL);
           PRAGMA user_version=1; COMMIT;").map_err(err)?;
         }
+        if version < 2 {
+            // v2: eventos de tipos que esta versão ainda não conhece ficam guardados
+            // sem projeção e são aplicados quando o app passar a conhecê-los.
+            store.connection.execute_batch("BEGIN IMMEDIATE;
+          CREATE TABLE IF NOT EXISTS deferred_events (event_id TEXT PRIMARY KEY REFERENCES events(id));
+          PRAGMA user_version=2; COMMIT;").map_err(err)?;
+        }
+        store.replay_deferred()?;
         Ok(store)
+    }
+    /// Projeta eventos guardados antes de o tipo ser conhecido.
+    fn replay_deferred(&self) -> StoreResult<()> {
+        let rows: Vec<String> = {
+            let mut stmt = self.connection.prepare("SELECT e.value_json FROM deferred_events d JOIN events e ON e.id=d.event_id ORDER BY e.at_ms,e.id").map_err(err)?;
+            let rows = stmt.query_map([], |r| r.get(0)).map_err(err)?;
+            rows.collect::<Result<_, _>>().map_err(err)?
+        };
+        if rows.is_empty() { return Ok(()); }
+        let tx = self.connection.unchecked_transaction().map_err(err)?;
+        for raw in rows {
+            let e = parse(raw)?;
+            if validate_event(&e).is_err() { continue; }
+            if project(&tx, &e)? {
+                tx.execute("DELETE FROM deferred_events WHERE event_id=?1", [string(&e, "id")?]).map_err(err)?;
+            }
+        }
+        tx.commit().map_err(err)
     }
     pub fn request(&mut self, operation: &str, args: &Value) -> StoreResult<Value> {
         match operation {
@@ -90,30 +116,10 @@ impl Store {
                     }
                     let at = ms(string(e,"at")?)?;
                     let device = string(e,"deviceId")?;
-                    let data = &e["data"];
                     let kind = string(e,"type")?;
-                    match kind {
-                        "practice.added" => {
-                            let log_id = string(data,"id")?;
-                            let old: Option<String> = tx.query_row("SELECT value_json FROM practice_logs WHERE id=?1",[log_id],|r|r.get(0)).optional().map_err(err)?;
-                            if let Some(old) = old {
-                                if parse(old)? != *data { return Err("ID de registro em conflito.".into()); }
-                            } else {
-                                let duration = data["durationSeconds"].as_f64().or_else(||data["durationMin"].as_f64().map(|m|m*60.));
-                                tx.execute("INSERT INTO practice_logs VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",params![log_id,string(data,"exerciseId")?,ms(string(data,"at")?)?,data["bpm"].as_f64(),data["count"].as_f64(),data["seconds"].as_f64(),duration,data["note"].as_str(),device,serialize(&data["metric"])?,serialize(data)?]).map_err(err)?;
-                            }
-                        }
-                        "routine.saved" => {
-                            tx.execute("INSERT INTO routines VALUES (?1,?2,?3,?4,?5,?6) ON CONFLICT(id) DO UPDATE SET name=excluded.name,blocks_json=excluded.blocks_json,value_json=excluded.value_json,updated_at_ms=excluded.updated_at_ms,event_id=excluded.event_id WHERE excluded.updated_at_ms>routines.updated_at_ms OR (excluded.updated_at_ms=routines.updated_at_ms AND excluded.event_id>routines.event_id)",params![string(data,"id")?,string(data,"name")?,serialize(&data["blocks"])?,serialize(data)?,at,id]).map_err(err)?;
-                        }
-                        "settings.changed" => {
-                            for change in data.as_array().ok_or("Ajustes inválidos")? {
-                                tx.execute("INSERT INTO settings VALUES (?1,?2,?3,?4) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at_ms=excluded.updated_at_ms,event_id=excluded.event_id WHERE excluded.updated_at_ms>settings.updated_at_ms OR (excluded.updated_at_ms=settings.updated_at_ms AND excluded.event_id>settings.event_id)",params![string(change,"key")?,serialize(&change["value"])?,at,id]).map_err(err)?;
-                            }
-                        }
-                        _ => unreachable!()
-                    }
-                    tx.execute("INSERT INTO events VALUES (?1,1,?2,?3,?4,?5,?6)",params![id,device,at,kind,serialize(data)?,serialize(e)?]).map_err(err)?;
+                    let projected = project(&tx, e)?;
+                    tx.execute("INSERT INTO events VALUES (?1,1,?2,?3,?4,?5,?6)",params![id,device,at,kind,serialize(&e["data"])?,serialize(e)?]).map_err(err)?;
+                    if !projected { tx.execute("INSERT INTO deferred_events VALUES (?1)",[id]).map_err(err)?; }
                     tx.execute("INSERT INTO sync_outbox VALUES (?1)",[id]).map_err(err)?;
                 }
                 tx.commit().map_err(err)?;
@@ -166,6 +172,37 @@ impl Store {
         }
         Ok(json!(values))
     }
+}
+
+/// Aplica o evento às tabelas de leitura. Devolve false para tipos desconhecidos.
+fn project(tx: &rusqlite::Transaction, e: &Value) -> StoreResult<bool> {
+    let id = string(e, "id")?;
+    let at = ms(string(e, "at")?)?;
+    let device = string(e, "deviceId")?;
+    let data = &e["data"];
+    let kind = string(e, "type")?;
+    match kind {
+        "practice.added" => {
+            let log_id = string(data,"id")?;
+            let old: Option<String> = tx.query_row("SELECT value_json FROM practice_logs WHERE id=?1",[log_id],|r|r.get(0)).optional().map_err(err)?;
+            if let Some(old) = old {
+                if parse(old)? != *data { return Err("ID de registro em conflito.".into()); }
+            } else {
+                let duration = data["durationSeconds"].as_f64().or_else(||data["durationMin"].as_f64().map(|m|m*60.));
+                tx.execute("INSERT INTO practice_logs VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",params![log_id,string(data,"exerciseId")?,ms(string(data,"at")?)?,data["bpm"].as_f64(),data["count"].as_f64(),data["seconds"].as_f64(),duration,data["note"].as_str(),device,serialize(&data["metric"])?,serialize(data)?]).map_err(err)?;
+            }
+        }
+        "routine.saved" => {
+            tx.execute("INSERT INTO routines VALUES (?1,?2,?3,?4,?5,?6) ON CONFLICT(id) DO UPDATE SET name=excluded.name,blocks_json=excluded.blocks_json,value_json=excluded.value_json,updated_at_ms=excluded.updated_at_ms,event_id=excluded.event_id WHERE excluded.updated_at_ms>routines.updated_at_ms OR (excluded.updated_at_ms=routines.updated_at_ms AND excluded.event_id>routines.event_id)",params![string(data,"id")?,string(data,"name")?,serialize(&data["blocks"])?,serialize(data)?,at,id]).map_err(err)?;
+        }
+        "settings.changed" => {
+            for change in data.as_array().ok_or("Ajustes inválidos")? {
+                tx.execute("INSERT INTO settings VALUES (?1,?2,?3,?4) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at_ms=excluded.updated_at_ms,event_id=excluded.event_id WHERE excluded.updated_at_ms>settings.updated_at_ms OR (excluded.updated_at_ms=settings.updated_at_ms AND excluded.event_id>settings.event_id)",params![string(change,"key")?,serialize(&change["value"])?,at,id]).map_err(err)?;
+            }
+        }
+        _ => return Ok(false),
+    }
+    Ok(true)
 }
 
 pub fn validate_event(e: &Value) -> StoreResult<()> {
@@ -231,7 +268,9 @@ pub fn validate_event(e: &Value) -> StoreResult<()> {
                 validate_setting(c)?;
             }
         }
-        _ => return Err("Tipo de evento desconhecido.".into()),
+        // Tipo de uma versão mais nova: o envelope foi validado; o conteúdo
+        // será validado quando esta versão passar a conhecer o tipo.
+        _ => {}
     }
     Ok(())
 }
@@ -293,6 +332,25 @@ pub mod sync;
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn migra_v1_para_v2_e_aplica_eventos_guardados_ao_reabrir() {
+        let path = std::env::temp_dir().join(format!("pratica-deferred-{}.sqlite3", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        {
+            let mut store = Store::open(&path).unwrap();
+            let v: i64 = store.connection.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
+            assert_eq!(v, 2);
+            store.request("apply", &json!({"events":[{"version":1,"id":"e1","deviceId":"b","at":"2026-11-20T12:00:00Z","type":"practice.added","data":{"id":"l1","exerciseId":"f1-spider","at":"2026-11-20T12:00:00Z","bpm":60}}]})).unwrap();
+            // Simula um app antigo que guardou o evento sem conhecer o tipo.
+            store.connection.execute_batch("DELETE FROM practice_logs; INSERT INTO deferred_events VALUES ('e1');").unwrap();
+        }
+        let mut store = Store::open(&path).unwrap();
+        assert_eq!(store.request("countByExercise", &json!({})).unwrap()["f1-spider"], 1);
+        let restantes: i64 = store.connection.query_row("SELECT COUNT(*) FROM deferred_events", [], |r| r.get(0)).unwrap();
+        assert_eq!(restantes, 0);
+        drop(store);
+        for suffix in ["", "-wal", "-shm"] { let _ = std::fs::remove_file(format!("{}{suffix}", path.display())); }
+    }
     #[test]
     fn rejeita_versao_futura_sem_rebaixar_banco() {
         let path =

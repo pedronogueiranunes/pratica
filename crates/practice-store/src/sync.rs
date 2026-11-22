@@ -142,6 +142,23 @@ mod tests {
         json!({"version":1,"id":id,"deviceId":device,"at":"2026-11-20T12:00:00Z","type":"practice.added","data":{"id":id,"exerciseId":"f1-spider","at":"2026-11-20T12:00:00Z","bpm":60}})
     }
     #[test]
+    fn evento_de_tipo_futuro_nao_trava_a_sincronizacao() {
+        let folder = std::env::temp_dir().join(format!("pratica-sync-futuro-{}", std::process::id()));
+        fs::create_dir_all(&folder).unwrap();
+        let futuro = json!({"version":1,"id":"n1","deviceId":"novo","at":"2026-11-21T12:00:00Z","type":"song.saved","data":{"id":"s1","title":"Teste"}});
+        fs::write(folder.join("novo.jsonl"), format!("{}\n{}\n", futuro, event("n2", "novo"))).unwrap();
+        let mut a = Store::open(":memory:").unwrap();
+        let report = sync_folder(&mut a, &folder, "a").unwrap();
+        assert_eq!(report.imported, 2);
+        assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+        assert_eq!(a.request("countByExercise", &json!({})).unwrap()["f1-spider"], 1);
+        let guardado: i64 = a.connection.query_row("SELECT COUNT(*) FROM deferred_events WHERE event_id='n1'", [], |r| r.get(0)).unwrap();
+        assert_eq!(guardado, 1);
+        // Ler de novo não duplica nem reclama.
+        assert_eq!(sync_folder(&mut a, &folder, "a").unwrap().imported, 0);
+        fs::remove_dir_all(folder).unwrap();
+    }
+    #[test]
     fn funde_dois_dispositivos_recupera_arquivo_e_ignora_cauda_incompleta() {
         let folder = std::env::temp_dir().join(format!("pratica-sync-{}", std::process::id()));
         fs::create_dir_all(&folder).unwrap();
