@@ -1,5 +1,90 @@
 # Status
 
+## Verificação da 3B no Mac e publicação (22/11/2026)
+- Rodado no Mac do Pedro antes do push: `PRACTICE_TEST_BROWSER=chrome pnpm test` (core **103**, SQLite **15**, IndexedDB **16** com Chrome instalado), `pnpm typecheck`, `pnpm --filter desktop build:web` e `cargo test --workspace` passaram.
+- Continuam **não executados**: `pnpm --filter desktop test:qa:3b` (capturas desktop/390 px nos dois temas, conflitos, playlists, offline, atualização), teste real do service worker no navegador, áudio real, medição CoreAudio, iCloud entre dois Macs e Laboratório (YouTube/153, Spotify). A 3B só deve ser tida como validada depois do `test:qa:3b`.
+- A bancada Amp A0 (`experiments/amp-a0`, módulos `amp` no motor de áudio) estava no mesmo diretório de trabalho e **não foi publicada**: ainda aguarda aprovação do Pedro.
+
+## QA da 3B no Mac: navegação móvel corrigida (22/11/2026)
+
+- Pedro executou `pnpm --filter desktop test:qa:3b` no Terminal do Mac. O build passou, o navegador abriu e gerou as quatro capturas de conflito em `target/qa-3b/` às 15:44:54, em 1440/390 px, claro/escuro.
+- A execução chegou à busca do botão Ajustes (linha 75 do roteiro anterior), depois das verificações de importação, três pontas, resolução/reabertura e criação/reordenação/reabertura de playlist. Parou em timeout de 30 s porque continuava em 390 px: Ajustes fica dentro de Mais. Não era falha do build nem confirmação de aprovação do QA completo.
+- O roteiro agora navega pelas telas pelo menu Telas, abrindo Mais quando necessário; imprime cada etapa e limita a espera de ativação do service worker. Não houve alteração da interface do app.
+- As quatro capturas foram abertas nesta sessão. Mostram o cabeçalho e parte da comparação; `fullPage` não percorre o scroll interno de `.main`. O roteiro passou a gerar também capturas de continuação para documentar as versões abaixo da dobra, sem alterar o layout.
+- Sintaxe do roteiro e `git diff --check` conferidos. Falta executar novamente para confirmar preparo offline em Ajustes, atualização com duas abas, reload sem rede e as capturas de continuação. A 3B permanece em validação; 3C não iniciada. Sem commit/push.
+
+Repetir no Terminal:
+
+```sh
+cd ~/Dev/guitar-exercises-app
+nvm use 24
+pnpm --filter desktop test:qa:3b
+```
+
+## Fase 3B: implementação local, validação no navegador pendente (22/11/2026)
+
+A 3B foi implementada sobre `d62e1f9`. **A 3C não começou**: a conferência renderizada e o offline em navegador real ainda são pendências da 3B. Não houve push, publicação ou alteração dos backups.
+
+### Entregas e decisões
+- **3B.1, eventos futuros:** separação entre envelope armazenável e evento projetável no core. Tipos desconhecidos com envelope v1 válido são preservados; tipos conhecidos continuam com validação completa. IndexedDB `pratica.v1` passa de v2 para **v3**, só adicionando `deferred_events`, e reprojeta tipos que já conhece ao abrir. SQLite permanece em `user_version=2`. Evento, projeção e fila continuam transacionais. Abertura bloqueada pede fechar outras abas e não deixa uma conexão rejeitada aberta depois.
+- **3B.2, playlists:** alternância Músicas/Playlists, criação, renomeação, exclusão com confirmação, adicionar/tirar músicas e reordenar por botões Subir/Descer. Salvar confirma o rascunho; Cancelar descarta. Rascunho, erro, estado de salvamento e trava ficam no provider, preservados ao navegar. Música apagada aparece como indisponível durante edição e pode ser retirada.
+- **3B.3, transferência:** botão Exportar ChordPro na música exporta a revisão atual original, sem a transposição de exibição. A importação de ChordPro/.txt da 3A foi reaproveitada. Área Levar repertório para outro aparelho oferece JSON com prévia/confirmar. Formato `pratica.repertoire`, versão 1: envelopes originais de `song.*`, `playlist.*` e `chart.*`, incluindo tombstones e todo o histórico de revisões. Sem ajustes, registros de prática ou arquivos físicos de áudio. Limites: 25 MB e 20.000 eventos. IDs repetidos no pacote, versão incompatível e dados conhecidos inválidos são rejeitados; conflito imutável aborta todo o lote. Reimportar o mesmo pacote é idempotente. Tipos futuros do namespace de repertório são guardados sem projeção.
+- **Relay para iCloud:** importar JSON no Mac marca `musicRelay:<eventId>` em `local_meta`, na mesma transação dos eventos. O JSONL publicado por este Mac inclui esses envelopes originais além dos próprios; nunca escreve no arquivo de outro dispositivo. Assim um pacote do navegador chega a outro Mac pelo iCloud, sem reatribuir autoria ou fabricar timestamps novos. Cópias repetidas fundem por ID. Não precisa de migração ou tipo novo de evento. Marcadores de transporte ficam locais.
+- **3B.4, offline:** plugin local do Vite emite `sw.js` só no build:web, com precache do HTML/assets/fontes e versão derivada do conteúdo compilado. Escopo estrito `/pratica/`; nada de cachear serviços externos ou dados pessoais. Shell é servido da mesma versão do cache, dados continuam no IndexedDB. Atualização aguarda ativação normal ou clique explícito em Atualizar e recarregar, em Ajustes; com duas abas já abertas, pede fechar as outras. Não recarrega automaticamente durante edição. Limpa apenas caches `pratica-shell-*` antigos na ativação. A checagem de abas não é uma trava atômica contra abrir outra aba exatamente durante a ativação.
+- **Persistência:** Ajustes mostra preparo offline e resultado de `navigator.storage.persisted()`/`persist()`. Pedido é explícito, com resultado concedido/não concedido/sem suporte. Aviso sobre Safari, instalação e exportação como cópia, sem prometer que persistência evita limpeza manual. Web em dev sem build não registra service worker; app Tauri não registra.
+- **3B.5, conflitos:** comparação agora mostra todas as pontas, em vez de mostrar duas e encerrar outras invisíveis. Resolução preserva `sourceUrl`. Rascunho de cifra guarda `chartId` e `parentRevision` ao abrir; salvar não adota uma ponta importada/sincronizada no meio da edição, evitando absorver conflito silenciosamente.
+
+### Verificações executadas
+
+| Verificação | Resultado nesta rodada |
+|---|---|
+| Core | **103 testes passaram** |
+| `practice-store` | **10 testes passaram**, incluindo pacote web→Mac A→Mac B, reabertura, autoria e idempotência em pasta temporária |
+| `audio-engine` | **16 testes passaram**; sem teste de hardware |
+| Contrato SQLite | **15 verificações passaram**, incluindo eventos futuros e pacote idempotente/atômico |
+| Ciclo de captura web | Passou com APIs controladas |
+| Service worker | Passou com APIs controladas em Node: shell sem rede, escopo, cache de versões e bloqueio com duas abas. **Não é execução em navegador** |
+| TypeScript | Passou |
+| `pnpm build:app` | Passou; compilou o Tauri atual, incluindo a permissão de tema e a operação de medição anteriores. Não executou essas operações |
+| `pnpm --filter desktop build:web` | Passou, com `sw.js` e lista de precache emitidos |
+| `pnpm test` com `PRACTICE_TEST_BROWSER=chrome` | Core, captura, SW controlado e SQLite passaram; parou ao abrir Chrome com `SIGABRT`/`EPERM`. Suíte completa **não aprovada** |
+| `test:qa:3b` | Build web passou; execução parou em `listen EPERM 127.0.0.1`, antes de abrir o navegador. **Nenhuma captura produzida** |
+| Página manual do contrato | Gerada em `target/contract/practice-store.html`; não executada nesta rodada |
+| Revisão independente | Estática: correções de conflito-base, múltiplas pontas e relay conferidas. Sem aprovação visual. PRODUCT/DESIGN preservados; contexto/detector visual tiveram execução bloqueada |
+
+Não foi usado `fake-indexeddb` nesta rodada. A migração IndexedDB v2→v3 e a reprojeção têm cenário na página de contrato, mas precisam rodar no navegador real. A geração da página e o typecheck não comprovam seu resultado.
+
+### Como testar
+
+```sh
+cd ~/Dev/guitar-exercises-app
+nvm use 24
+open "target/release/bundle/macos/Prática.app"
+# Recompilar o app sem DMG:
+pnpm build:app
+# Contratos e suíte completa com o Chrome instalado:
+PRACTICE_TEST_BROWSER=chrome pnpm test
+# Contrato IndexedDB manual, em banco temporário:
+pnpm --filter desktop test:web:manual
+open -a "Google Chrome" target/contract/practice-store.html
+# QA web isolado, compila e abre perfil de teste descartável:
+pnpm --filter desktop test:qa:3b
+```
+
+O QA cria somente textos neutros e banco em perfil descartável: importa repertório com três pontas, compara/resolve/reabre, cria e reordena playlist, captura conflito a 1440/390 px em claro/escuro, testa atualização com duas abas e reload offline. Capturas esperadas em `target/qa-3b/`. O roteiro está preparado e a sintaxe conferida, mas não foi executado até o fim neste ambiente.
+
+1. No Mac, Músicas→Playlists: criar, adicionar músicas, mover, renomear, salvar, reabrir, tirar música e apagar playlist. Conferir Cancelar e rascunho após sair/voltar.
+2. Exportar ChordPro e JSON; importar no Chrome e depois de volta no Mac. Reimportar sem duplicar. Conferir exclusões e comparação de cifras; durante uma edição, importar revisão concorrente e salvar para confirmar o conflito.
+3. Web offline precisa do **build web servido por HTTP local ou HTTPS**, não apenas `pnpm web` nem `file://`. O QA usa servidor HTTP local. No site público, só verificar a nova versão após um push autorizado; nada foi publicado nesta rodada.
+4. Após preparar o cache online, desconectar e recarregar. Editar e reabrir músicas/playlists. Em Ajustes, solicitar persistência e conferir o resultado. Testar atualização de duas versões com duas abas, salvando os rascunhos antes de recarregar.
+5. Conferir desktop e 390 px, claro/escuro, teclado, foco e movimento reduzido. Atualizar os dois Macs antes do teste real de iCloud.
+
+### Pendências e histórico
+- A 3B ainda depende da execução do contrato IndexedDB real, da comparação de conflito renderizada, dos quatro cenários visuais e do offline/atualização reais. Não iniciar a 3C antes desse fechamento.
+- Persistem as pendências do Pedro: afinador com microfone/interface (permissão, qualidade, canal, buffer, reconexão); medição de atraso CoreAudio; barra lateral clara com macOS escuro; celular real; sync iCloud entre dois Macs; Laboratório YouTube/erro 153 e Spotify com redirect `http://127.0.0.1/callback` e Client ID próprio.
+- O app compilado do projeto foi atualizado; a cópia em Aplicativos não foi substituída.
+- `git add` foi tentado e bloqueado ao criar `.git/index.lock` (`Operation not permitted`). Os lotes 3B.1–3B.5 acima **não são commits criados**: alterações permanecem no diretório de trabalho. Nenhum push, PR, reset, limpeza ou modificação dos backups.
+
 ## Ajustes pedidos em 22/11 (depois da 3A)
 
 ### Feito
