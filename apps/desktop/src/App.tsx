@@ -21,6 +21,7 @@ import { Settings } from "./screens/Settings";
 import { Lab } from "./screens/Lab";
 import { Placeholder } from "./screens/Placeholder";
 import { Exercise } from "./screens/Exercise";
+import { Songs } from "./screens/Songs";
 import { NavContext } from "./lib/nav";
 import type { MessageKey } from "@gx/core";
 
@@ -140,11 +141,7 @@ export function App() {
         {route === "ajustes" && <Settings />}
         {route === "laboratorio" && <Lab />}
         {route === "calendario" && <Calendar />}
-        {route === "musicas" && (
-          <Placeholder title={t("nav.musicas")} icon={<IconMusic size={40} />} phase={3}>
-            Suas músicas, playlists e cifras salvas para usar offline.
-          </Placeholder>
-        )}
+        {route === "musicas" && <Songs />}
         {route === "companion" && (
           <Placeholder title={t("nav.companion")} icon={<IconCompanion size={40} />} phase={5}>
             A cifra rola no tempo da música enquanto você toca.
