@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "pnpm --filter desktop tauri dev",
     "build": "pnpm --filter desktop tauri build",
-    "test": "pnpm -r test && cargo test -p audio-engine",
+    "test": "pnpm -r test && cargo test -p audio-engine -p practice-store",
     "typecheck": "pnpm -r typecheck",
-    "web": "pnpm --filter desktop dev"
+    "web": "pnpm --filter desktop dev",
+    "build:app": "pnpm --filter desktop tauri build --bundles app"
   }
 }

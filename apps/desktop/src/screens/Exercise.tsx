@@ -6,6 +6,9 @@ import { useNav } from "../lib/nav";
 import { isNative } from "../lib/engine";
 import { Fretboard } from "../components/Fretboard";
 import { Tab } from "../components/Tab";
+import { PracticeForm } from "../components/PracticeForm";
+import { ExerciseProgression } from "../components/ExerciseProgression";
+import { usePractice } from "../lib/practice-state";
 import { MetronomePanel } from "../components/MetronomePanel";
 
 async function openExternal(url: string) {
@@ -16,8 +19,10 @@ async function openExternal(url: string) {
 }
 
 export function Exercise({ id }: { id: string }) {
-  const { t, catalog } = useApp();
+  const { t, catalog, settings } = useApp();
   const nav = useNav();
+  const { logs, ready } = usePractice();
+  const [achieved, setAchieved] = useState<number | undefined>();
   const m = useMetronome();
   const ex = catalog.exercicios.find((e) => e.id === id);
   const visual = useMemo(() => exerciseVisual(id), [id]);
@@ -29,11 +34,15 @@ export function Exercise({ id }: { id: string }) {
 
   // Ao abrir, o metrônomo vai para o bpm inicial do exercício (se parado).
   useEffect(() => {
-    if (ex?.bpmInicial && !m.running) m.setBpm(ex.bpmInicial);
+    const last = logs.filter((log) => log.exerciseId === id && log.bpm !== undefined).at(-1);
+    if (!m.running && (last?.bpm ?? ex?.bpmInicial)) m.setBpm(last?.bpm ?? ex!.bpmInicial!);
+    setAchieved(undefined);
     setStep(0);
     setDiagramIdx(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, ready]);
+
+  useEffect(() => setAchieved(undefined), [settings.metronome.progression]);
 
   // Cada clique do metrônomo avança um passo da tab.
   useEffect(() => {
@@ -129,7 +138,11 @@ export function Exercise({ id }: { id: string }) {
           )}
         </section>
 
-        <MetronomePanel compact />
+        <section className="exercise-practice">
+          <MetronomePanel compact />
+          {ex.metrica.tipo === "bpm" && <div className="panel"><ExerciseProgression key={id} exercise={ex} onAchieved={setAchieved} /></div>}
+          <div className="panel"><PracticeForm key={id} exercise={ex} initialBpm={achieved} /></div>
+        </section>
 
         <section className="panel ex-info">
           <h2>Para passar</h2>

@@ -1,0 +1,117 @@
+import { validateEvent, type PracticeEvent, type StoreBackend, type LogRange, type SettingChange, type PracticeRecord, type SavedRoutine } from "@gx/core";
+
+const canonical = (value: unknown): string => JSON.stringify(value, (_, v) => v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) : v);
+
+type Row = { id?: string; key?: string; atMs: number; eventId: string; value: unknown };
+const result = <T>(req: IDBRequest<T>) => new Promise<T>((resolve, reject) => {
+  req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error);
+});
+const done = (tx: IDBTransaction) => new Promise<void>((resolve, reject) => {
+  tx.oncomplete = () => resolve(); tx.onabort = () => reject(tx.error ?? new Error("Gravação cancelada.")); tx.onerror = () => reject(tx.error);
+});
+const newer = (e: PracticeEvent, old?: Row) => !old || Date.parse(e.at) > old.atMs || (Date.parse(e.at) === old.atMs && e.id > old.eventId);
+export class IndexedDbBackend implements StoreBackend {
+  private db: Promise<IDBDatabase>;
+  constructor(name = "pratica.v1") {
+    this.db = new Promise((resolve, reject) => {
+      const req = indexedDB.open(name, 1);
+      req.onerror = () => reject(req.error);
+      req.onblocked = () => reject(new Error("Feche as outras abas do Prática para atualizar os dados."));
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        const logs = db.createObjectStore("practice_logs", { keyPath: "id" });
+        logs.createIndex("at_ms", "atMs"); logs.createIndex("exercise_at", ["exerciseId", "atMs"]);
+        db.createObjectStore("routines", { keyPath: "id" });
+        db.createObjectStore("settings", { keyPath: "key" });
+        const events = db.createObjectStore("events", { keyPath: "id" });
+        events.createIndex("device", "deviceId");
+        db.createObjectStore("sync_outbox", { keyPath: "eventId" });
+        db.createObjectStore("local_meta", { keyPath: "key" });
+      };
+      req.onsuccess = () => { req.result.onversionchange = () => req.result.close(); resolve(req.result); };
+    });
+  }
+  async close() { (await this.db).close(); }
+  async request(operation: string, data?: unknown): Promise<unknown> {
+    const db = await this.db;
+    const args = (data ?? {}) as Record<string, unknown>;
+    if (operation === "apply") {
+      const events = args.events as PracticeEvent[];
+      events.forEach(validateEvent);
+      const tx = db.transaction(["events", "practice_logs", "routines", "settings", "sync_outbox"], "readwrite");
+      const completion = done(tx);
+      try {
+        for (const e of events) {
+          const previous = await result(tx.objectStore("events").get(e.id)) as PracticeEvent | undefined;
+          if (previous) {
+            if (canonical(Object.fromEntries(Object.entries(previous).filter(([key]) => key !== "atMs"))) !== canonical(e)) throw new Error("ID de evento em conflito.");
+            continue;
+          }
+          const atMs = Date.parse(e.at);
+          if (e.type === "practice.added") {
+            const log = e.data as PracticeRecord;
+            const store = tx.objectStore("practice_logs");
+            const old = await result(store.get(log.id)) as Row | undefined;
+            if (old && canonical(old.value) !== canonical(log)) throw new Error("ID de registro em conflito.");
+            if (!old) store.add({ id: log.id, exerciseId: log.exerciseId, atMs: Date.parse(log.at), value: log });
+          } else if (e.type === "routine.saved") {
+            const routine = e.data as SavedRoutine;
+            const store = tx.objectStore("routines");
+            const old = await result(store.get(routine.id)) as Row | undefined;
+            if (newer(e, old)) store.put({ id: routine.id, value: routine, atMs, eventId: e.id });
+          } else {
+            const store = tx.objectStore("settings");
+            for (const change of e.data as SettingChange[]) {
+              const old = await result(store.get(change.key)) as Row | undefined;
+              if (newer(e, old)) store.put({ ...change, atMs, eventId: e.id });
+            }
+          }
+          tx.objectStore("events").add({ ...e, atMs });
+          tx.objectStore("sync_outbox").put({ eventId: e.id });
+        }
+      } catch (error) { try { tx.abort(); } catch {} await completion.catch(() => {}); throw error; }
+      await completion; return null;
+    }
+    if (operation === "nextTimestamp") {
+      const tx = db.transaction(["local_meta", "events"], "readwrite"); const completion = done(tx);
+      const meta = tx.objectStore("local_meta");
+      const reserved = await result(meta.get("eventClock")) as { value: number } | undefined;
+      const events = await result(tx.objectStore("events").getAll()) as PracticeEvent[];
+      const latest = events.reduce((max, event) => Math.max(max, Date.parse(event.at)), 0);
+      const time = Math.max(Date.now(), (reserved?.value ?? 0) + 1, latest + 1);
+      meta.put({ key: "eventClock", value: time }); await completion; return time;
+    }
+    if (operation === "deviceId") {
+      const tx = db.transaction("local_meta", "readwrite"); const completion = done(tx);
+      const store = tx.objectStore("local_meta");
+      const old = await result(store.get("deviceId")) as { value: string } | undefined;
+      const id = old?.value ?? crypto.randomUUID();
+      if (!old) store.put({ key: "deviceId", value: id });
+      await completion; return id;
+    }
+    if (operation === "metaGet" || operation === "metaSet") {
+      const tx = db.transaction("local_meta", operation === "metaSet" ? "readwrite" : "readonly"); const completion = done(tx);
+      const store = tx.objectStore("local_meta");
+      if (operation === "metaSet") { store.put(args); await completion; return null; }
+      const row = await result(store.get(args.key as string)); await completion; return row?.value ?? null;
+    }
+    const table = operation === "events" ? "events" : operation === "getRoutine" ? "routines" : operation === "getSettings" ? "settings" : "practice_logs";
+    const tx = db.transaction(table, "readonly"); const completion = done(tx);
+    const store = tx.objectStore(table);
+    if (operation === "getRoutine") {
+      const row = await result(store.get(args.id as string)) as Row | undefined; await completion; return row?.value ?? null;
+    }
+    const rows = await result(store.getAll()); await completion;
+    if (operation === "events") return rows.map(({ atMs: _, ...event }) => event).sort((a: PracticeEvent, b: PracticeEvent) => Date.parse(a.at) - Date.parse(b.at) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    if (operation === "getSettings") return rows.map(({ key, value }: Row) => ({ key, value }));
+    if (operation === "countByExercise") {
+      const counts: Record<string, number> = {};
+      for (const row of rows) counts[row.exerciseId] = (counts[row.exerciseId] ?? 0) + 1;
+      return counts;
+    }
+    if (operation !== "listLogs") throw new Error("Operação desconhecida.");
+    const range = args as LogRange;
+    return rows.filter((row) => (!range.from || row.atMs >= Date.parse(range.from)) && (!range.to || row.atMs < Date.parse(range.to)) && (!range.exerciseId || row.exerciseId === range.exerciseId))
+      .sort((a, b) => a.atMs - b.atMs || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)).map((row) => row.value);
+  }
+}

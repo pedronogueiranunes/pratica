@@ -3,6 +3,7 @@
 //! em `crates/audio-engine`.
 
 mod spotify;
+mod storage;
 
 use audio_engine::engine::{list_devices, start_engine, EngineHandle};
 use audio_engine::{rank, DeviceInfo, MetronomeSettings, Purpose, Recommendation};
@@ -61,6 +62,11 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(spotify::SpotifyState::default())
         .setup(|app| {
+            let data_dir = app.path().app_local_data_dir()?;
+            std::fs::create_dir_all(&data_dir)?;
+            let store = practice_store::Store::open(data_dir.join("pratica.sqlite3"))
+                .map_err(std::io::Error::other)?;
+            app.manage(storage::Practice(std::sync::Mutex::new(store)));
             let handle = app.handle().clone();
             let engine = start_engine(move |event| {
                 let _ = handle.emit("engine", event);
@@ -69,6 +75,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            storage::practice_request,
+            storage::practice_sync,
             audio_devices,
             audio_rank,
             audio_refresh,

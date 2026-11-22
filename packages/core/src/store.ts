@@ -1,0 +1,29 @@
+import type { PracticeRecord, Settings } from "./types";
+import type { RoutineBlock } from "./routine";
+
+export interface LogRange { from?: string; to?: string; exerciseId?: string }
+export interface SavedRoutine { id: string; name: string; blocks: RoutineBlock[] }
+export type SettingsPatch = { [K in keyof Settings]?: Settings[K] extends object ? Partial<Settings[K]> : Settings[K] };
+export interface PracticeStore {
+  addLog(log: PracticeRecord): Promise<void>;
+  listLogs(range?: LogRange): Promise<PracticeRecord[]>;
+  countByExercise(): Promise<Record<string, number>>;
+  saveRoutine(routine: SavedRoutine): Promise<void>;
+  getRoutine(id: string): Promise<SavedRoutine | null>;
+  getSettings(): Promise<Settings>;
+  saveSettings(patch: SettingsPatch): Promise<void>;
+}
+
+/** A origem identifica quem escreveu. O horário da prática pode ser anterior ao evento. */
+export interface PracticeEvent {
+  version: 1;
+  id: string;
+  deviceId: string;
+  at: string;
+  type: "practice.added" | "settings.changed" | "routine.saved";
+  data: unknown;
+}
+export interface SettingChange { key: string; value: unknown }
+export interface StoreBackend {
+  request(operation: string, data?: unknown): Promise<unknown>;
+}

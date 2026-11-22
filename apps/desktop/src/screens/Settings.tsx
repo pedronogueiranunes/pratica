@@ -1,12 +1,14 @@
 import type { Theme } from "@gx/core";
 import { useApp } from "../lib/app-state";
 import { suggestion, useDevices } from "../lib/devices";
+import { usePractice } from "../lib/practice-state";
 import { engine } from "../lib/engine";
 
 const THEMES: Theme[] = ["sistema", "claro", "escuro"];
 
 export function Settings() {
   const { t, settings, update } = useApp();
+  const { sync } = usePractice();
   const { devices, instrument, playback, latency } = useDevices();
   const inputs = devices.filter((d) => d.isInput && d.inputChannels > 0);
   const outputs = devices.filter((d) => d.isOutput && d.outputChannels > 0);
@@ -140,6 +142,11 @@ export function Settings() {
           <p className="muted small" style={{ marginBottom: 0 }}>
             O app confere os dispositivos a cada 3 segundos. A latência medida aparece depois de usar o metrônomo ou o afinador.
           </p>
+        </section>
+
+        <section className="panel">
+          <h2>Seus dados</h2>
+          <p className="muted" role="status">{sync?.message ?? "Abrindo os dados locais…"}</p>
         </section>
 
         <section className="panel">

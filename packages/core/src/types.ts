@@ -59,6 +59,9 @@ export interface PracticeRecord {
   /** ISO 8601 com fuso. */
   at: string;
   durationMin?: number;
+  /** Tempo real de prática, independente da métrica do exercício. */
+  durationSeconds?: number;
+  metric?: Metric;
   bpm?: number;
   count?: number;
   seconds?: number;
@@ -77,6 +80,7 @@ export interface Settings {
   /** Fase em que o Pedro está trabalhando agora (sem prazo). */
   currentPhase: number;
   dedication: DedicationLevel;
+  routineSource: "suggested" | "custom";
   metronome: {
     sound: "madeira" | "bip" | "aro" | "cowbell" | "suave";
     volume: number;
@@ -98,6 +102,7 @@ export const defaultSettings: Settings = {
   locale: "pt-BR",
   currentPhase: 1,
   dedication: "media",
+  routineSource: "suggested",
   metronome: {
     sound: "madeira",
     volume: 0.8,

@@ -12,6 +12,8 @@ import {
   IconToday,
   IconTools,
 } from "./icons";
+import { Calendar } from "./screens/Calendar";
+import { usePractice } from "./lib/practice-state";
 import { Today } from "./screens/Today";
 import { Roadmap } from "./screens/Roadmap";
 import { Tools } from "./screens/Tools";
@@ -43,7 +45,8 @@ function isTyping(e: KeyboardEvent) {
 }
 
 export function App() {
-  const { t } = useApp();
+  const { t, settingsError } = useApp();
+  const { error: storageError, ready } = usePractice();
   const m = useMetronome();
   const [route, setRoute] = useState<Route>(() => (localStorage.getItem("pratica.route") as Route) || "hoje");
 
@@ -79,8 +82,8 @@ export function App() {
         }
         return;
       }
-      if (isTyping(e) || e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.code === "Space") {
+      if (e.defaultPrevented || isTyping(e) || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.code === "Space" && !(e.target as HTMLElement)?.closest("button, a, summary, [role=button]")) {
         e.preventDefault();
         m.toggle();
       } else if (e.key === "ArrowUp" || e.key === "ArrowRight") {
@@ -128,17 +131,15 @@ export function App() {
       </aside>
       <main className="main">
         <div className="drag" data-tauri-drag-region />
+        {(storageError || settingsError) && <p className="storage-status error-text" role="alert">{storageError || settingsError}</p>}
+        {!ready && !storageError && <p className="storage-status muted" role="status">Carregando seus dados…</p>}
         {route === "exercicio" && exerciseId && <Exercise id={exerciseId} />}
         {route === "hoje" && <Today />}
         {route === "roadmap" && <Roadmap />}
         {route === "ferramentas" && <Tools />}
         {route === "ajustes" && <Settings />}
         {route === "laboratorio" && <Lab />}
-        {route === "calendario" && (
-          <Placeholder title={t("nav.calendario")} icon={<IconCalendar size={40} />} phase={1}>
-            Tudo o que você praticou, dia a dia.
-          </Placeholder>
-        )}
+        {route === "calendario" && <Calendar />}
         {route === "musicas" && (
           <Placeholder title={t("nav.musicas")} icon={<IconMusic size={40} />} phase={3}>
             Suas músicas, playlists e cifras salvas para usar offline.

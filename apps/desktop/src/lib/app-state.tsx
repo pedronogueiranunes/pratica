@@ -1,7 +1,6 @@
-// Estado global leve: ajustes (salvos no aparelho), tradução e catálogo.
-// Na Fase 1 os ajustes e registros passam para o SQLite via Rust.
+// Ajustes persistidos por PracticeStore, tradução e catálogo.
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, useRef, type ReactNode } from "react";
 import {
   createTranslator,
   defaultSettings,
@@ -10,56 +9,73 @@ import {
   type Settings,
   type Translate,
 } from "@gx/core";
+import { openPracticeStore, getStorageWarning } from "./storage";
+import type { PracticeStore } from "@gx/core";
 import seed from "../../../../data/exercises.seed.json";
 
-const KEY = "pratica.settings.v1";
-
-function load(): Settings {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return defaultSettings;
-    const parsed = JSON.parse(raw) as Partial<Settings>;
-    return {
-      ...defaultSettings,
-      ...parsed,
-      metronome: { ...defaultSettings.metronome, ...parsed.metronome },
-      tuner: { ...defaultSettings.tuner, ...parsed.tuner },
-    };
-  } catch {
-    return defaultSettings;
-  }
-}
 
 type Patch = { [K in keyof Settings]?: Settings[K] extends object ? Partial<Settings[K]> : Settings[K] };
 
 interface AppState {
   settings: Settings;
-  update: (patch: Patch) => void;
+  update: (patch: Patch) => Promise<boolean>;
   t: Translate;
   catalog: Catalog;
+  settingsError: string | null;
 }
 
 const Ctx = createContext<AppState | null>(null);
 const catalog = parseCatalog(seed);
 
 export function AppStateProvider({ children }: { children: ReactNode }) {
-  const [settings, setSettings] = useState<Settings>(load);
+  const [settings, setSettings] = useState<Settings>(() => structuredClone(defaultSettings));
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const store = useRef<PracticeStore | null>(null);
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
+  const revision = useRef(0);
+  useEffect(() => {
+    let active = true;
+    const hydrate = async () => {
+      try {
+        const repository = await openPracticeStore();
+        await queue.current;
+        const before = revision.current;
+        const saved = await repository.getSettings();
+        const warning = await getStorageWarning();
+        if (active) {
+          store.current = repository;
+          if (warning) setSettingsError(warning);
+          if (before === revision.current) setSettings(saved);
+        }
+      } catch (e) { if (active) setSettingsError(String(e)); }
+    };
+    void hydrate();
+    window.addEventListener("practice-synced", hydrate);
+    return () => { active = false; window.removeEventListener("practice-synced", hydrate); };
+  }, []);
 
   const update = useCallback((patch: Patch) => {
-    setSettings((prev) => {
-      const next = { ...prev } as Settings;
-      for (const [k, v] of Object.entries(patch)) {
-        const key = k as keyof Settings;
-        const cur = prev[key];
-        (next as unknown as Record<string, unknown>)[key] =
-          typeof cur === "object" && cur !== null ? { ...cur, ...(v as object) } : v;
-      }
-      try {
-        localStorage.setItem(KEY, JSON.stringify(next));
-      } catch {
-        // Sem armazenamento: segue só na memória.
-      }
-      return next;
+    revision.current++;
+    const write = queue.current.catch(() => {}).then(async () => {
+      const repository = store.current ?? await openPracticeStore();
+      await repository.saveSettings(patch);
+      setSettings((prev) => {
+        const next = { ...prev } as Settings;
+        for (const [k, v] of Object.entries(patch)) {
+          const key = k as keyof Settings;
+          const cur = prev[key];
+          (next as unknown as Record<string, unknown>)[key] =
+            typeof cur === "object" && cur !== null ? { ...cur, ...(v as object) } : v;
+        }
+        return next;
+      });
+      setSettingsError(null);
+      window.dispatchEvent(new Event("practice-written"));
+    });
+    queue.current = write.catch(() => {});
+    return write.then(() => true, (error) => {
+      setSettingsError(`Não foi possível salvar o ajuste. Tente de novo. ${String(error)}`);
+      return false;
     });
   }, []);
 
@@ -71,7 +87,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   }, [settings.theme, settings.locale]);
 
   const t = useMemo(() => createTranslator(settings.locale), [settings.locale]);
-  const value = useMemo(() => ({ settings, update, t, catalog }), [settings, update, t]);
+  const value = useMemo(() => ({ settings, update, t, catalog, settingsError }), [settings, update, t, settingsError]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
