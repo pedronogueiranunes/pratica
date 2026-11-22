@@ -16,3 +16,6 @@ export * from "./calendar";
 export * from "./roadmap";
 export * from "./routine-editor";
 export * from "./tuner";
+export * from "./chords";
+export * from "./chart-import";
+export * from "./chordpro";

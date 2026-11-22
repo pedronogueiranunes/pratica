@@ -1,0 +1,33 @@
+[Intro] Em7(9)  D  C7M  B7
+ 
+Em7(9)                      D
+Linha um da estrofe com palavras de teste aqui
+C7M                         B7
+Linha dois da estrofe tem outro texto neutro
+Em7(9)
+Verso curto um
+D
+Verso curto dois
+C7M
+Verso curto tres
+B7
+Verso curto quatro
+ 
+Em7(9)
+Refrao linha um com texto de exemplo para teste
+D
+Refrao linha dois com texto de exemplo
+C7M
+Refrao linha tres com mais palavras de exemplo
+B7
+Refrao linha quatro termina aqui sem letra real
+ 
+Em7(9)    D  C7M  B7
+Uuuuhhhhh
+ 
+C7M           D7
+Ponte linha um com texto de exemplo
+Bm7              Em7
+Ponte linha dois curta
+
+(artista, nome da musica)
