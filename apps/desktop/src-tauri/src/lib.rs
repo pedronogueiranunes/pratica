@@ -37,8 +37,8 @@ fn metronome_stop(audio: State<Audio>) {
 }
 
 #[tauri::command]
-fn tuner_start(audio: State<Audio>, device_id: Option<String>, channel: u16, a4: f32) {
-    audio.0.start_tuner(device_id, channel, a4);
+fn tuner_start(audio: State<Audio>, device_id: Option<String>, channel: u16, a4: f32, buffer_frames: Option<u32>) {
+    audio.0.start_tuner_with_buffer(device_id, channel, a4, buffer_frames);
 }
 
 #[tauri::command]

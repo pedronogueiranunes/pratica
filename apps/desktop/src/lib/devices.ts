@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { DeviceInfo, Recommendation } from "@gx/core";
 import { engine, onEngine } from "./engine";
+import { useApp } from "./app-state";
 
 export interface DevicesState {
   devices: DeviceInfo[];
@@ -12,14 +13,17 @@ export interface DevicesState {
 }
 
 export function useDevices(): DevicesState {
+  const { settings } = useApp();
+  const profiles = settings.tuner.inputProfiles;
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
   const [latency, setLatency] = useState<DevicesState["latency"]>({});
   const [instrument, setInstrument] = useState<Recommendation[]>([]);
   const [playback, setPlayback] = useState<Recommendation[]>([]);
 
   useEffect(() => {
-    void engine.devices().then(setDevices);
-    return onEngine((e) => {
+    let active = true;
+    void engine.devices().then((items) => { if (active) setDevices(items); }).catch(() => {});
+    const off = onEngine((e) => {
       if (e.type === "devices") setDevices(e.devices);
       if (e.type === "latency") {
         setLatency((prev) => ({
@@ -28,18 +32,21 @@ export function useDevices(): DevicesState {
         }));
       }
     });
+    return () => { active = false; off(); };
   }, []);
 
   useEffect(() => {
     // A latência medida entra na conta da recomendação.
     const withMeasured = devices.map((d) => ({
       ...d,
-      measuredInputMs: latency[d.id]?.input ?? d.measuredInputMs,
+      measuredInputMs: latency[d.id]?.input ?? d.measuredInputMs ?? profiles.find((p) => p.deviceId === d.id)?.inputMs ?? null,
       measuredOutputMs: latency[d.id]?.output ?? d.measuredOutputMs,
     }));
-    void engine.rank(withMeasured, "instrument").then(setInstrument);
-    void engine.rank(withMeasured, "playback").then(setPlayback);
-  }, [devices, latency]);
+    let active = true;
+    void engine.rank(withMeasured, "instrument").then((items) => { if (active) setInstrument(items); }).catch(() => {});
+    void engine.rank(withMeasured, "playback").then((items) => { if (active) setPlayback(items); }).catch(() => {});
+    return () => { active = false; };
+  }, [devices, latency, profiles]);
 
   return { devices, instrument, playback, latency };
 }

@@ -28,7 +28,7 @@ fn main() {
             println!("{}{}  {:+.1} cents  ({:.2} Hz)", r.name, r.octave, r.cents, r.frequency)
         }
         EngineEvent::Latency { direction, ms, .. } => println!("latência {direction:?}: {ms:.1} ms"),
-        EngineEvent::Error { code, message } => eprintln!("erro {code:?}: {message}"),
+        EngineEvent::Error { code, message, .. } => eprintln!("erro {code:?}: {message}"),
         _ => {}
     });
 

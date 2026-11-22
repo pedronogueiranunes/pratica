@@ -8,11 +8,12 @@
     "build": "tsc -p tsconfig.json && vite build",
     "build:web": "tsc -p tsconfig.json && VITE_BASE=/pratica/ vite build",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node test/run-contracts.mjs",
+    "test": "node test/tuner-engine.mjs && node test/run-contracts.mjs",
     "tauri": "tauri",
     "test:web": "node test/run-contracts.mjs --web",
     "test:native": "node test/run-contracts.mjs --native",
-    "test:web:manual": "node test/run-contracts.mjs --manual-web"
+    "test:web:manual": "node test/run-contracts.mjs --manual-web",
+    "test:audio": "node test/tuner-engine.mjs"
   },
   "dependencies": {
     "@fontsource/geist-mono": "^5.3.0",

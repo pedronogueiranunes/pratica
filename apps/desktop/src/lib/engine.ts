@@ -8,15 +8,17 @@ export const isNative = typeof window !== "undefined" && "__TAURI_INTERNALS__" i
 
 type Listener = (e: EngineEvent) => void;
 const listeners = new Set<Listener>();
-let nativeHooked = false;
+let nativeHook: Promise<void> | null = null;
 
 async function hookNative() {
-  if (nativeHooked || !isNative) return;
-  nativeHooked = true;
-  const { listen } = await import("@tauri-apps/api/event");
-  await listen<EngineEvent>("engine", (ev) => {
-    for (const l of listeners) l(ev.payload);
-  });
+  if (!isNative) return;
+  nativeHook ??= (async () => {
+    const { listen } = await import("@tauri-apps/api/event");
+    await listen<EngineEvent>("engine", (ev) => {
+      for (const l of listeners) l(ev.payload);
+    });
+  })().catch((error) => { nativeHook = null; throw error; });
+  await nativeHook;
 }
 
 function emit(e: EngineEvent) {
@@ -25,7 +27,7 @@ function emit(e: EngineEvent) {
 
 export function onEngine(fn: Listener): () => void {
   listeners.add(fn);
-  void hookNative();
+  void hookNative().catch(() => {});
   return () => listeners.delete(fn);
 }
 
@@ -64,8 +66,8 @@ export const engine = {
     if (isNative) return invoke("metronome_stop");
     web().stopMetronome();
   },
-  async startTuner(deviceId: string | null, channel: number, a4: number) {
-    if (isNative) return invoke("tuner_start", { deviceId, channel, a4 });
+  async startTuner(deviceId: string | null, channel: number, a4: number, bufferFrames: number | null = null) {
+    if (isNative) { await hookNative(); return invoke("tuner_start", { deviceId, channel, a4, bufferFrames }); }
     return web().startTuner(deviceId, channel, a4);
   },
   async setA4(a4: number) {

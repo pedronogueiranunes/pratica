@@ -81,3 +81,10 @@ Na tela Ajustes, a seção **Conexões** tem um botão por serviço e mostra o q
 - SoundCloud, chave de API: https://developers.soundcloud.com/docs/api/register-app
 - Audius, SDK: https://docs.audius.org/developers/sdk/overview
 - CloudKit: https://developer.apple.com/documentation/cloudkit/enabling-cloudkit-in-your-app
+
+## Fase 2: perfis de entrada (21/11/2026)
+
+- Perfis são ajustes locais por aparelho (`tuner.inputProfiles` no namespace `device:<id>:`), projetados em SQLite/IndexedDB e gravados como eventos. Sem tabela nova.
+- Cada perfil guarda entrada real, canal, buffer solicitado (Mac), taxa de processamento, última latência informada, fonte e data. Salvar fixa a entrada; escolher novamente recupera canal e buffer. Diagnóstico é atualizado ao salvar, sem emitir eventos a cada callback.
+- cpal aceita buffer fixo dentro dos limites informados pelo dispositivo. No web, o navegador controla o buffer; canais e identidade vêm do track adquirido.
+- Timestamp de captura e `MediaTrackSettings.latency` são diagnósticos de entrada, não calibração física round trip. A janela YIN de 4.096 amostras é informada separadamente.

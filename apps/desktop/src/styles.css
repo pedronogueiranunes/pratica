@@ -1082,3 +1082,13 @@ textarea { width: 100%; min-height: 64px; resize: vertical; border: 1px solid va
 }
 
 .roadmap-phase .list[hidden] { display: none; }
+
+/* Afinador: mantém leitura e controles na mesma superfície. */
+.tuner-reference { display: inline-flex; align-items: center; padding: 0 12px; white-space: nowrap; }
+.tuner-instruction { min-height: 2.5em; text-align: center; color: var(--fg-2); margin: 8px 0; }
+.tuner-instruction.in-tune { color: var(--in-tune); }
+.tuner-profile { border-top: 1px solid var(--line); margin-top: 24px; padding-top: 16px; }
+.tuner-profile summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
+.tuner-profile p { overflow-wrap: anywhere; }
+.tuner-notice { flex-wrap: wrap; }
+@media (max-width: 700px) { .panel-head:has(.tuner-reference) { flex-wrap: wrap; } }

@@ -21,7 +21,9 @@ export function Settings() {
   };
   const ms = (id: string, dir: "input" | "output", list: typeof instrument) => {
     const measured = latency[id]?.[dir];
-    if (measured != null) return `${t("devices.latency", { ms: measured })} medido`;
+    if (measured != null) return `${t("devices.latency", { ms: measured })} no stream`;
+    const profile = dir === "input" ? settings.tuner.inputProfiles.find((p) => p.deviceId === id) : null;
+    if (profile?.inputMs != null) return `${t("devices.latency", { ms: profile.inputMs.toFixed(1) })} no perfil salvo`;
     const est = list.find((x) => x.deviceId === id)?.estimatedMs;
     return est != null ? `cerca de ${t("devices.latency", { ms: Math.round(est) })}` : "";
   };
@@ -69,7 +71,7 @@ export function Settings() {
             <div className="notice">
               <span>{t("devices.suggest", { name: nameOf(inSuggest.deviceId) })}</span>
               <span className="spacer" />
-              <button className="btn primary" onClick={() => update({ tuner: { inputDeviceId: inSuggest.deviceId, inputChannel: 0 } })}>
+              <button className="btn primary" onClick={() => update({ tuner: { inputDeviceId: inSuggest.deviceId, inputChannel: settings.tuner.inputProfiles.find((p) => p.deviceId === inSuggest.deviceId)?.channel ?? 0 } })}>
                 Usar
               </button>
             </div>
@@ -103,7 +105,7 @@ export function Settings() {
             <select
               id="in"
               value={settings.tuner.inputDeviceId ?? ""}
-              onChange={(e) => update({ tuner: { inputDeviceId: e.target.value || undefined, inputChannel: 0 } })}
+              onChange={(e) => update({ tuner: { inputDeviceId: e.target.value || undefined, inputChannel: settings.tuner.inputProfiles.find((p) => p.deviceId === e.target.value)?.channel ?? 0 } })}
             >
               <option value="">{t("devices.default")}</option>
               {inputs.map((d) => (
@@ -140,7 +142,7 @@ export function Settings() {
             ))}
           </div>
           <p className="muted small" style={{ marginBottom: 0 }}>
-            O app confere os dispositivos a cada 3 segundos. A latência medida aparece depois de usar o metrônomo ou o afinador.
+            O Mac confere as entradas a cada 3 segundos; o navegador avisa quando elas mudam. Use o afinador em Ferramentas para conferir e salvar o perfil de cada entrada. Latências salvas podem mudar ao reconectar.
           </p>
         </section>
 

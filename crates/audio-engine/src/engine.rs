@@ -39,7 +39,9 @@ pub enum EngineEvent {
     #[serde(rename_all = "camelCase")]
     TunerState { running: bool, device_id: Option<String> },
     #[serde(rename_all = "camelCase")]
-    Error { code: ErrorCode, message: String },
+    Error { code: ErrorCode, message: String, direction: Option<Direction> },
+    #[serde(rename_all = "camelCase")]
+    TunerStream { device_id: String, channel: u16, channels: u16, sample_rate: u32, buffer_frames: Option<u32>, source: &'static str },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -62,7 +64,7 @@ enum Command {
     StartMetronome { device_id: Option<String>, settings: MetronomeSettings },
     UpdateMetronome(MetronomeSettings),
     StopMetronome,
-    StartTuner { device_id: Option<String>, channel: u16, a4: f32 },
+    StartTuner { device_id: Option<String>, channel: u16, a4: f32, buffer_frames: Option<u32> },
     SetA4(f32),
     StopTuner,
     RefreshDevices,
@@ -106,7 +108,10 @@ impl EngineHandle {
         let _ = self.tx.send(Command::StopMetronome);
     }
     pub fn start_tuner(&self, device_id: Option<String>, channel: u16, a4: f32) {
-        let _ = self.tx.send(Command::StartTuner { device_id, channel, a4 });
+        self.start_tuner_with_buffer(device_id, channel, a4, None);
+    }
+    pub fn start_tuner_with_buffer(&self, device_id: Option<String>, channel: u16, a4: f32, buffer_frames: Option<u32>) {
+        let _ = self.tx.send(Command::StartTuner { device_id, channel, a4, buffer_frames });
     }
     pub fn set_a4(&self, a4: f32) {
         let _ = self.tx.send(Command::SetA4(a4));
@@ -218,6 +223,8 @@ struct MetronomeStream {
 }
 
 struct TunerStream {
+    channels: u16,
+    sample_rate: u32,
     _stream: cpal::Stream,
     device_id: String,
     samples: rtrb::Consumer<f32>,
@@ -265,7 +272,7 @@ impl EngineThread {
     }
 
     fn error(&self, code: ErrorCode, message: impl Into<String>) {
-        (self.emit)(EngineEvent::Error { code, message: message.into() });
+        (self.emit)(EngineEvent::Error { code, message: message.into(), direction: None });
     }
 
     fn handle(&mut self, cmd: Command) {
@@ -298,15 +305,16 @@ impl EngineThread {
                 self.metronome = None;
                 (self.emit)(EngineEvent::MetronomeState { running: false, device_id: None });
             }
-            Command::StartTuner { device_id, channel, a4 } => {
+            Command::StartTuner { device_id, channel, a4, buffer_frames } => {
                 self.tuner = None;
-                match self.open_tuner(device_id.as_deref(), channel, a4) {
+                match self.open_tuner(device_id.as_deref(), channel, a4, buffer_frames) {
                     Ok(t) => {
+                        (self.emit)(EngineEvent::TunerStream { device_id: t.device_id.clone(), channel, channels: t.channels, sample_rate: t.sample_rate, buffer_frames, source: "nativeTimestamp" });
                         (self.emit)(EngineEvent::TunerState { running: true, device_id: Some(t.device_id.clone()) });
                         self.tuner = Some(t);
                     }
                     Err((code, msg)) => {
-                        self.error(code, msg);
+                        (self.emit)(EngineEvent::Error { code, message: msg, direction: Some(Direction::Input) });
                         (self.emit)(EngineEvent::TunerState { running: false, device_id: None });
                     }
                 }
@@ -343,14 +351,16 @@ impl EngineThread {
         }
 
         if let Some(t) = self.tuner.as_mut() {
+            let mut fresh = false;
             while let Ok(s) = t.samples.pop() {
                 t.window.push(s);
+                fresh = true;
             }
             if t.window.len() > TUNER_WINDOW * 4 {
                 let drop = t.window.len() - TUNER_WINDOW;
                 t.window.drain(..drop);
             }
-            if t.window.len() >= TUNER_WINDOW && t.last_emit.elapsed() >= TUNER_EMIT_EVERY {
+            if fresh && t.window.len() >= TUNER_WINDOW && t.last_emit.elapsed() >= TUNER_EMIT_EVERY {
                 let start = t.window.len() - TUNER_WINDOW;
                 let frame = &t.window[start..];
                 let level = rms(frame);
@@ -378,14 +388,14 @@ impl EngineThread {
                     (self.emit)(EngineEvent::TunerState { running: false, device_id: None });
                 }
             }
-            self.error(ErrorCode::DeviceLost, message);
+            (self.emit)(EngineEvent::Error { code: ErrorCode::DeviceLost, message, direction: Some(direction) });
             self.known_devices.clear();
         }
 
         if self.last_poll.elapsed() >= DEVICE_POLL {
             self.last_poll = Instant::now();
             let devices = list_devices();
-            let mut ids: Vec<String> = devices.iter().map(|d| d.id.clone()).collect();
+            let mut ids: Vec<String> = devices.iter().map(|d| format!("{}:{}:{}:{}:{}", d.id, d.is_default_input, d.is_default_output, d.input_channels, d.output_channels)).collect();
             ids.sort();
             if ids != self.known_devices {
                 self.known_devices = ids;
@@ -448,16 +458,25 @@ impl EngineThread {
         })
     }
 
-    fn open_tuner(&self, device_id: Option<&str>, channel: u16, a4: f32) -> Result<TunerStream, (ErrorCode, String)> {
-        let device = find_device(true, device_id).ok_or((ErrorCode::NoDevice, "Nenhuma entrada de áudio".into()))?;
+    fn open_tuner(&self, device_id: Option<&str>, channel: u16, a4: f32, buffer_frames: Option<u32>) -> Result<TunerStream, (ErrorCode, String)> {
+        let device = find_device(true, device_id).filter(|d| device_id.is_none() || d.id().ok().is_some_and(|id| Some(id.to_string().as_str()) == device_id)).ok_or((ErrorCode::NoDevice, "Nenhuma entrada de áudio".into()))?;
         let id = device.id().map(|i| i.to_string()).unwrap_or_default();
         let supported = device
             .default_input_config()
             .map_err(|e| (ErrorCode::StreamFailed, e.to_string()))?;
         let format = supported.sample_format();
-        let config: cpal::StreamConfig = supported.config();
+        let mut config: cpal::StreamConfig = supported.config();
+        if let Some(frames) = buffer_frames {
+            let valid = match supported.buffer_size() {
+                cpal::SupportedBufferSize::Range { min, max } => frames >= *min && frames <= *max,
+                _ => false,
+            };
+            if !valid { return Err((ErrorCode::StreamFailed, "Buffer não suportado. Escolha Automático.".into())); }
+            config.buffer_size = cpal::BufferSize::Fixed(frames);
+        }
         let channels = config.channels.max(1) as usize;
-        let channel = (channel as usize).min(channels - 1);
+        if channel as usize >= channels { return Err((ErrorCode::StreamFailed, "Canal indisponível nesta entrada. Escolha outro canal.".into())); }
+        let channel = channel as usize;
         let sample_rate = config.sample_rate;
 
         let (tx, rx) = rtrb::RingBuffer::<f32>::new(sample_rate as usize);
@@ -475,6 +494,8 @@ impl EngineThread {
         stream.play().map_err(|e| (ErrorCode::StreamFailed, e.to_string()))?;
 
         Ok(TunerStream {
+            channels: config.channels,
+            sample_rate,
             _stream: stream,
             device_id: id,
             samples: rx,

@@ -13,13 +13,14 @@ import { AppStateProvider } from "./lib/app-state";
 import { MetronomeProvider } from "./lib/metronome";
 import { PracticeProvider } from "./lib/practice-state";
 import { App } from "./App";
+import { TunerProvider } from "./lib/tuner";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <AppStateProvider>
       <PracticeProvider>
       <MetronomeProvider>
-        <App />
+        <TunerProvider><App /></TunerProvider>
       </MetronomeProvider>
       </PracticeProvider>
     </AppStateProvider>

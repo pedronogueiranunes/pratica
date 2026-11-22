@@ -43,6 +43,10 @@ export function createWebEngine(emit: Emit) {
   let analyser: AnalyserNode | null = null;
   let tunerTimer = 0;
   let a4 = 440;
+  let tunerGeneration = 0;
+  let tunerSource: MediaStreamAudioSourceNode | null = null;
+  let tunerSplit: ChannelSplitterNode | null = null;
+  const inputCapabilities = new Map<string, { channels: number; sampleRate: number }>();
 
   async function ensureCtx(deviceId: string | null) {
     if (!ctx) {
@@ -106,6 +110,7 @@ export function createWebEngine(emit: Emit) {
   async function listDevices(): Promise<DeviceInfo[]> {
     if (!navigator.mediaDevices?.enumerateDevices) return [];
     const all = await navigator.mediaDevices.enumerateDevices();
+    const defaultInputGroup = all.find((d) => d.kind === "audioinput" && d.deviceId === "default")?.groupId;
     const byId = new Map<string, DeviceInfo>();
     for (const d of all) {
       if (d.kind !== "audioinput" && d.kind !== "audiooutput") continue;
@@ -120,13 +125,13 @@ export function createWebEngine(emit: Emit) {
         connection: guessConnection(label),
         isInput: input,
         isOutput: !input,
-        isDefaultInput: false,
+        isDefaultInput: input && !!defaultInputGroup && d.groupId === defaultInputGroup,
         isDefaultOutput: false,
-        inputChannels: input ? 2 : 0,
+        inputChannels: input ? (inputCapabilities.get(id)?.channels ?? 1) : 0,
         outputChannels: input ? 0 : 2,
-        sampleRate: ctx?.sampleRate ?? 48000,
-        bufferMin: 128,
-        bufferMax: 4096,
+        sampleRate: input ? (inputCapabilities.get(id)?.sampleRate ?? null) : (ctx?.sampleRate ?? null),
+        bufferMin: null,
+        bufferMax: null,
         measuredInputMs: null,
         measuredOutputMs: null,
       });
@@ -179,10 +184,13 @@ export function createWebEngine(emit: Emit) {
     async startTuner(deviceId: string | null, channel: number, ref: number) {
       a4 = ref;
       this.stopTuner(true);
+      const generation = tunerGeneration;
+      let acquired: MediaStream | null = null;
       try {
         const c = await ensureCtx(outputDevice);
+        if (generation !== tunerGeneration) return;
         const id = rawId(deviceId);
-        stream = await navigator.mediaDevices.getUserMedia({
+        acquired = await navigator.mediaDevices.getUserMedia({
           audio: {
             ...(id ? { deviceId: { exact: id } } : {}),
             echoCancellation: false,
@@ -190,12 +198,24 @@ export function createWebEngine(emit: Emit) {
             autoGainControl: false,
           },
         });
+        if (generation !== tunerGeneration) { acquired.getTracks().forEach((t) => t.stop()); return; }
+        stream = acquired;
+        const track = stream.getAudioTracks()[0];
+        if (!track) throw new Error("Nenhuma entrada disponível.");
+        const actual = track.getSettings();
+        const actualId = actual.deviceId ? `in:${actual.deviceId}` : deviceId;
+        if (!actualId) throw new Error("Não foi possível identificar a entrada. Escolha um dispositivo.");
+        const channels = actual.channelCount ?? 1;
+        inputCapabilities.set(actualId, { channels, sampleRate: c.sampleRate });
+        if (channel >= channels) throw new Error("Canal indisponível. Escolha outro canal.");
         const src = c.createMediaStreamSource(stream);
-        const split = c.createChannelSplitter(2);
+        const split = c.createChannelSplitter(channels);
+        tunerSource = src;
+        tunerSplit = split;
         analyser = c.createAnalyser();
         analyser.fftSize = 4096;
         src.connect(split);
-        split.connect(analyser, Math.min(channel, 1));
+        split.connect(analyser, channel);
         const buf = new Float32Array(analyser.fftSize);
         tunerTimer = window.setInterval(() => {
           if (!analyser) return;
@@ -205,17 +225,26 @@ export function createWebEngine(emit: Emit) {
           const reading = est ? noteFromFrequency(est.frequency, a4) : null;
           emit({ type: "pitch", reading, clarity: est?.clarity ?? 0, level });
         }, 30);
-        emit({ type: "tunerState", running: true, deviceId });
-        const track = stream.getAudioTracks()[0];
+        track.addEventListener("ended", () => {
+          if (generation !== tunerGeneration) return;
+          this.stopTuner();
+          emit({ type: "error", code: "deviceLost", direction: "input", message: "A entrada foi desconectada. Escolha uma entrada e ligue o afinador." });
+        });
+        emit({ type: "tunerStream", deviceId: actualId, channel, channels, sampleRate: c.sampleRate, bufferFrames: null, source: "browserReported" });
+        emit({ type: "tunerState", running: true, deviceId: actualId });
         const lat = (track?.getSettings() as { latency?: number } | undefined)?.latency;
-        if (lat) emit({ type: "latency", direction: "input", deviceId: deviceId ?? "padrão", ms: lat * 1000 });
+        if (lat) emit({ type: "latency", direction: "input", deviceId: actualId, ms: lat * 1000 });
         // Com a permissão dada, os nomes dos dispositivos aparecem.
         emit({ type: "devices", devices: await listDevices() });
       } catch (err) {
+        acquired?.getTracks().forEach((t) => t.stop());
+        if (generation !== tunerGeneration) return;
+        this.stopTuner(true);
         const denied = err instanceof DOMException && err.name === "NotAllowedError";
         emit({
           type: "error",
           code: denied ? "noDevice" : "streamFailed",
+          direction: "input",
           message: denied ? "O navegador não deixou usar o microfone." : String(err),
         });
         emit({ type: "tunerState", running: false, deviceId: null });
@@ -225,7 +254,13 @@ export function createWebEngine(emit: Emit) {
       a4 = v;
     },
     stopTuner(silent = false) {
+      tunerGeneration++;
       window.clearInterval(tunerTimer);
+      tunerSource?.disconnect();
+      tunerSplit?.disconnect();
+      analyser?.disconnect();
+      tunerSource = null;
+      tunerSplit = null;
       stream?.getTracks().forEach((t) => t.stop());
       stream = null;
       analyser = null;
