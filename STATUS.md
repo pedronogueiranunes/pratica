@@ -1,5 +1,57 @@
 # Status
 
+## Fase 2: afinador e perfis implementados, validação de áudio pendente (21/11/2026)
+
+### Publicação (22/11/2026)
+- A 1A/1B já estava na `main` no commit `4226a21` (publicado pelo conector GitHub). Em 22/11 o histórico local foi alinhado com `git fetch` e `git reset --mixed origin/main`, sem tocar nos arquivos de trabalho. O remoto não tinha avançado além de `4226a21`.
+- Backups criados antes do reset: branch `backup/pre-alinhamento-fase2-20261122` e tag `backup-head-20261122` (HEAD antigo, com o commit local `8c0efcb`), mais a ref `refs/backup/worktree-tracked-20261122` (snapshot das alterações rastreadas).
+- A Fase 2 foi publicada em commits separados na `main`. O workflow do Pages roda a cada push; veja o resultado do deploy no fim desta seção quando confirmado.
+
+### Implementado
+- Afinador mantém estado acima das rotas: entrar em Ajustes e voltar não perde a captura nem indica que está desligado enquanto o microfone está aberto.
+- Nota/oitava, frequência, cents, sinal e orientação de ajuste; estados desligado, abrindo, ouvindo, sinal fraco e instável. A nota e o estado são anunciados sem anunciar cents continuamente. Agulha limitada à escala, com atualização direta quando movimento reduzido está ativo.
+- Entrada e canal reais informados pelo motor. No Mac, seleção explícita ausente ou canal inválido falham com recuperação, sem cair silenciosamente em outra entrada. Mudança do padrão nativo reabre a captura quando Padrão está selecionado. No navegador, isso depende de o navegador expor alias/grupo do padrão; o rótulo Ouvindo sempre identifica a captura efetiva.
+- Buffer solicitado por entrada no Mac, com Automático e opções dentro dos limites do dispositivo. Buffer incompatível pede voltar a Automático. A configuração é solicitada ao cpal, não uma garantia do tamanho de cada callback.
+- Salvar perfil guarda ID real, canal, buffer solicitado, taxa de amostragem do processamento, última latência informada, origem da medida e data. Salvar também seleciona explicitamente essa entrada, como a UI informa; ao reabrir/trocar para ela, canal e buffer são recuperados. Salvar novamente atualiza o diagnóstico; não grava um evento a cada callback.
+- Perfis ficam em `device:<id>:tuner.inputProfiles`, na mesma persistência por eventos da 1A, com validação TS/Rust e sem migração de tabelas. Não ativam IDs de áudio de outro aparelho. O ranking considera o perfil salvo quando não há leitura corrente; Ajustes distingue perfil salvo de leitura no stream.
+- A latência do Mac vem dos timestamps de captura; a do navegador vem do track quando disponível. A UI distingue ausência de medida, medida atual e perfil salvo. A janela YIN tem 4.096 amostras e é exibida separadamente. Não há alegação de medição round trip nem calibração por cabo.
+- Web: captura cancelada antes/depois da permissão não reativa o afinador; canais reais substituem a suposição de estéreo; desconexão encerra tracks e informa como retomar. O navegador continua escolhendo o buffer.
+- Lógica e modelos em `packages/core/src/tuner.ts`; ciclo de captura em Rust/Web Audio; estado em `apps/desktop/src/lib/tuner.tsx`; painel conserva o sistema visual existente. Fase 3 não iniciada.
+
+### Verificações
+- Core: **32 testes passaram**, incluindo seis cordas, três desvios conhecidos e duas taxas de amostragem; estados, limites e perfis locais/validados.
+- Rust (`cargo test --workspace`, 22/11): **24 testes passaram** (16 do motor de áudio, 2 adicionais e 6 de persistência/sincronização).
+- Contrato SQLite real: **11 verificações passaram**, incluindo reabertura do perfil, isolamento por aparelho e rejeição no backend de perfis inválidos/globais.
+- `pnpm --filter desktop test:audio`: passou o contrato do ciclo de captura web com APIs de áudio controladas (cancelar antes/depois da permissão, mono, canal indisponível e desconexão). Não é teste de microfone real ou navegador.
+- `pnpm test` (22/11, Mac do Pedro): core (32), captura web e SQLite (11) passaram; o passo IndexedDB parou porque o Chromium do Playwright não está instalado. Rodado à parte com `PRACTICE_TEST_BROWSER=chrome pnpm --filter desktop test:web`: **IndexedDB, 11 verificações passaram**. Ou seja, a suíte inteira passou, mas só com o Chrome instalado; `pnpm test` puro ainda exige `pnpm exec playwright install`.
+- TypeScript e `git diff --check` passaram. Em 22/11 passaram também `pnpm typecheck`, `pnpm build:app` (gera só o `.app`) e `pnpm --filter desktop build:web`. O DMG (`pnpm build`) não foi tentado de novo; na rodada anterior falhou com `hdiutil: Device not configured`, limite do ambiente.
+- Revisão independente estática conferiu as correções de perfil/default, cancelamento, estado acessível e movimento reduzido. Sem aprovação visual: não havia controle de UI disponível, e o detector de design teve execução bloqueada. PRODUCT/DESIGN preservados por ser extensão do painel existente.
+
+### Como testar
+
+```sh
+cd ~/Dev/guitar-exercises-app
+nvm use 24
+open "target/release/bundle/macos/Prática.app"
+# Recompilar sem DMG:
+pnpm build:app
+# Webapp local:
+pnpm web
+# Testes sem microfone e sem navegador:
+pnpm --filter desktop test:audio
+pnpm --filter desktop test:native
+# Contrato IndexedDB atualizado, para abrir no Chrome:
+pnpm --filter desktop test:web:manual
+open -a "Google Chrome" target/contract/practice-store.html
+```
+
+1. Ferramentas: ligar afinador, permitir microfone e tocar uma corda por vez. Conferir nota/oitava, cents, sinal baixo/silêncio e Lá 430–450 Hz. Alternar Ajustes/Ferramentas sem perder o estado; parar deve liberar a captura.
+2. Com interface conectada: escolher entrada e canal da guitarra. Em Perfil da entrada, experimentar Automático e buffer suportado. Se falhar, voltar a Automático e ligar novamente. Conferir nome/canal efetivo e latência atual sem confundi-la com a janela de análise.
+3. Salvar perfil, parar/reabrir o app e conferir entrada/canal/buffer. Testar outra entrada e voltar; salvar novamente para atualizar a medida. Desconectar interface, conferir erro e escolher outra entrada. Com Padrão, mudar a entrada padrão do Mac e conferir reabertura e rótulo Ouvindo.
+4. Repetir permissão negada, cancelamento e desconexão no webapp. Conferir modo claro/escuro, janela estreita, teclado e preferência de movimento reduzido.
+
+Ainda pendentes: áudio real com microfone/interface (permissão, qualidade, canal, buffer, reconexão), UI nos dois temas e tamanhos e pendências manuais da 1A/1B/iCloud entre dois Macs. A cópia em Aplicativos não foi substituída. Laboratório: YouTube/erro 153 e Spotify com redirect `http://127.0.0.1/callback` e Client ID próprio continuam pendentes.
+
 ## Revalidação da 1A (21/11/2026)
 
 A implementação da 1A e da 1B foi preservada. Esta rodada reforçou testes de falha/retomada e tornou os contratos executáveis sem servidor local. A Fase 2 não foi iniciada.
