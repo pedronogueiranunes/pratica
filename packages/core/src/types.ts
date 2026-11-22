@@ -94,6 +94,7 @@ export interface Settings {
     a4: number;
     inputDeviceId?: string;
     inputChannel: number;
+    inputProfiles: import("./tuner").InputProfile[];
   };
 }
 
@@ -111,5 +112,5 @@ export const defaultSettings: Settings = {
     accentFirstBeat: true,
     progression: "auto",
   },
-  tuner: { a4: 440, inputChannel: 0 },
+  tuner: { a4: 440, inputChannel: 0, inputProfiles: [] },
 };

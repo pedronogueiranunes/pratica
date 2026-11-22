@@ -235,6 +235,21 @@ pub fn validate_event(e: &Value) -> StoreResult<()> {
     }
     Ok(())
 }
+fn valid_input_profiles(value: &Value) -> bool {
+    let Some(profiles) = value.as_array() else { return false };
+    let mut ids = std::collections::HashSet::new();
+    profiles.len() <= 128 && profiles.iter().all(|p| {
+        let Some(id) = p["deviceId"].as_str() else { return false };
+        !id.is_empty() && ids.insert(id)
+            && p["channel"].as_u64().is_some_and(|n| n <= 255)
+            && (p["bufferFrames"].is_null() || p["bufferFrames"].as_u64().is_some_and(|n| (32..=8192).contains(&n)))
+            && p["sampleRate"].as_u64().is_some_and(|n| (8000..=768000).contains(&n))
+            && (p["inputMs"].is_null() || p["inputMs"].as_f64().is_some_and(|n| n.is_finite() && (0.0..=10000.0).contains(&n)))
+            && p["source"].as_str().is_some_and(|s| ["nativeTimestamp", "browserReported"].contains(&s))
+            && p["measuredAt"].as_str().is_some_and(|s| chrono::DateTime::parse_from_rfc3339(s).is_ok())
+    })
+}
+
 fn validate_setting(c: &Value) -> StoreResult<()> {
     let raw = string(c, "key")?;
     let key = if raw.starts_with("device:") {
@@ -262,6 +277,7 @@ fn validate_setting(c: &Value) -> StoreResult<()> {
         "metronome.accentFirstBeat" => x.is_boolean(),
         "tuner.a4" => num(430., 450.),
         "tuner.inputChannel" => num(0., 255.) && x.as_u64().is_some(),
+        "tuner.inputProfiles" => raw.starts_with("device:") && valid_input_profiles(x),
         "metronome.outputDeviceId" | "tuner.inputDeviceId" => x.is_null() || x.is_string(),
         _ => false,
     };

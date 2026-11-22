@@ -65,6 +65,13 @@ export async function storeContract(open: Open) {
   const other = new PracticeRepository(backend, "device-b");
   equal((await other.getSettings()).tuner.inputDeviceId, undefined, "dispositivo não vaza entre aparelhos");
   equal((await repo.getSettings()).tuner.inputDeviceId, "usb-a", "seleção local preservada"); checks.push("ajustes de áudio locais");
+  const profile = { deviceId: "usb-a", channel: 1, bufferFrames: 128, sampleRate: 48000, inputMs: 5.4, source: "nativeTimestamp" as const, measuredAt: "2026-11-21T22:00:00Z" };
+  await repo.saveSettings({ tuner: { inputProfiles: [profile] } });
+  equal((await repo.getSettings()).tuner.inputProfiles, [profile], "perfil preservado");
+  equal((await other.getSettings()).tuner.inputProfiles, [], "perfil restrito ao aparelho");
+  await rejects(() => backend.request("apply", { events: [event("bad-profile", "2190-01-01T00:00:00Z", "settings.changed", [{ key: "device:device-a:tuner.inputProfiles", value: [{ ...profile, inputMs: -1 }] }])] }), "backend rejeita perfil inválido");
+  await rejects(() => backend.request("apply", { events: [event("shared-profile", "2190-01-01T00:00:00Z", "settings.changed", [{ key: "tuner.inputProfiles", value: [profile] }])] }), "perfil não pode ser global");
+  checks.push("perfis de entrada locais e validados");
   await repo.saveSettings({ routineSource: "custom" });
   equal((await repo.getSettings()).routineSource, "custom", "escolha da rotina própria");
   const routine = { id: "my-routine", name: "Minha rotina", blocks: [{ kind: "aquecimento" as const, minutes: 5, exerciseId: "f1-spider" }] };
@@ -76,6 +83,7 @@ export async function storeContract(open: Open) {
   backend = await open(); repo = new PracticeRepository(backend, "device-a");
   equal((await repo.listLogs()).length, 5, "registros após reabrir");
   equal((await repo.getSettings()).theme, "escuro", "ajustes após reabrir");
+  equal((await repo.getSettings()).tuner.inputProfiles, [profile], "perfil após reabrir");
   equal((await repo.getSettings()).routineSource, "custom", "rotina escolhida após reabrir");
   equal((await repo.getRoutine(routine.id))?.name, "Nova", "rotina após reabrir"); checks.push("reabertura persistente");
   const closeAgain = (backend as StoreBackend & { close?: () => Promise<void> }).close;

@@ -71,4 +71,5 @@ export type EngineEvent =
   | { type: "devices"; devices: DeviceInfo[] }
   | { type: "metronomeState"; running: boolean; deviceId: string | null }
   | { type: "tunerState"; running: boolean; deviceId: string | null }
-  | { type: "error"; code: EngineErrorCode; message: string };
+  | { type: "tunerStream"; deviceId: string; channel: number; channels: number; sampleRate: number; bufferFrames: number | null; source: "nativeTimestamp" | "browserReported" }
+  | { type: "error"; code: EngineErrorCode; message: string; direction?: "input" | "output" };

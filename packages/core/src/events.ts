@@ -1,4 +1,5 @@
 import { defaultSettings, type PracticeRecord, type Settings } from "./types";
+import { validInputProfiles } from "./tuner";
 import type { PracticeEvent, SavedRoutine, SettingChange, SettingsPatch } from "./store";
 
 const obj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
@@ -32,7 +33,7 @@ export function flattenSettings(patch: SettingsPatch, deviceId: string): Setting
     if (obj(value)) {
       for (const [sub, item] of Object.entries(value)) {
         const path = `${key}.${sub}`;
-        const local = ["metronome.outputDeviceId", "tuner.inputDeviceId", "tuner.inputChannel"].includes(path);
+        const local = ["metronome.outputDeviceId", "tuner.inputDeviceId", "tuner.inputChannel", "tuner.inputProfiles"].includes(path);
         changes.push({ key: local ? `device:${deviceId}:${path}` : path, value: item ?? null });
       }
     } else changes.push({ key, value });
@@ -57,6 +58,7 @@ export function validateSetting(v: unknown): asserts v is SettingChange {
     : key === "metronome.accentFirstBeat" ? typeof x === "boolean"
     : key === "tuner.a4" ? num(430, 450)
     : key === "tuner.inputChannel" ? num(0, 255) && Number.isInteger(x)
+    : key === "tuner.inputProfiles" ? v.key.startsWith("device:") && validInputProfiles(x)
     : ["metronome.outputDeviceId", "tuner.inputDeviceId"].includes(key) ? x === null || typeof x === "string" : false;
   if (!valid) throw new Error("Ajuste inválido.");
 }
