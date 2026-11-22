@@ -1,9 +1,8 @@
-import { readFileSync } from "node:fs";
+import pasted from "./fixtures/cifra-colada-cifraclub.txt?raw";
 import { describe, expect, it } from "vitest";
 import { chordsUsed, isChord, isChordLine, mergeChordsIntoLyrics, parseChord, parseChordPro, plainTextToChordPro, serializeChordPro, transposeChord, transposeDoc } from "../src";
 
 // Estrutura de uma cifra colada do Cifra Club pelo Pedro, com a letra trocada por texto neutro.
-const pasted = readFileSync(new URL("./fixtures/cifra-colada-cifraclub.txt", import.meta.url), "utf8");
 
 describe("acordes", () => {
   it("aceita notação brasileira e inglesa", () => {

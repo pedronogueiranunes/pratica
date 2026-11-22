@@ -19,3 +19,4 @@ export * from "./tuner";
 export * from "./chords";
 export * from "./chart-import";
 export * from "./chordpro";
+export * from "./songs";

@@ -145,7 +145,7 @@ mod tests {
     fn evento_de_tipo_futuro_nao_trava_a_sincronizacao() {
         let folder = std::env::temp_dir().join(format!("pratica-sync-futuro-{}", std::process::id()));
         fs::create_dir_all(&folder).unwrap();
-        let futuro = json!({"version":1,"id":"n1","deviceId":"novo","at":"2026-11-21T12:00:00Z","type":"song.saved","data":{"id":"s1","title":"Teste"}});
+        let futuro = json!({"version":1,"id":"n1","deviceId":"novo","at":"2026-11-21T12:00:00Z","type":"exemplo.futuro","data":{"id":"x1"}});
         fs::write(folder.join("novo.jsonl"), format!("{}\n{}\n", futuro, event("n2", "novo"))).unwrap();
         let mut a = Store::open(":memory:").unwrap();
         let report = sync_folder(&mut a, &folder, "a").unwrap();

@@ -63,10 +63,14 @@ impl Store {
           PRAGMA user_version=1; COMMIT;").map_err(err)?;
         }
         if version < 2 {
-            // v2: eventos de tipos que esta versão ainda não conhece ficam guardados
+            // v2: músicas, playlists e revisões de cifra; eventos de tipos que esta versão ainda não conhece ficam guardados
             // sem projeção e são aplicados quando o app passar a conhecê-los.
             store.connection.execute_batch("BEGIN IMMEDIATE;
           CREATE TABLE IF NOT EXISTS deferred_events (event_id TEXT PRIMARY KEY REFERENCES events(id));
+          CREATE TABLE IF NOT EXISTS songs (id TEXT PRIMARY KEY,value_json TEXT NOT NULL,updated_at_ms INTEGER NOT NULL,event_id TEXT NOT NULL);
+          CREATE TABLE IF NOT EXISTS playlists (id TEXT PRIMARY KEY,value_json TEXT NOT NULL,updated_at_ms INTEGER NOT NULL,event_id TEXT NOT NULL);
+          CREATE TABLE IF NOT EXISTS chart_revisions (revision TEXT PRIMARY KEY,chart_id TEXT NOT NULL,song_id TEXT NOT NULL,created_at_ms INTEGER NOT NULL,value_json TEXT NOT NULL);
+          CREATE INDEX IF NOT EXISTS chart_revisions_chart ON chart_revisions(chart_id);
           PRAGMA user_version=2; COMMIT;").map_err(err)?;
         }
         store.replay_deferred()?;
@@ -148,6 +152,9 @@ impl Store {
                 for row in rows { let (key,v) = row.map_err(err)?; out.push(json!({"key":key,"value":parse(v)?})); }
                 Ok(json!(out))
             }
+            "listSongs" => self.values("SELECT value_json FROM songs ORDER BY id",[]),
+            "listPlaylists" => self.values("SELECT value_json FROM playlists ORDER BY id",[]),
+            "chartRevisions" => self.values("SELECT value_json FROM chart_revisions WHERE chart_id=?1 ORDER BY created_at_ms,revision",[string(args,"chartId")?]),
             "events" => self.values("SELECT value_json FROM events ORDER BY at_ms,id",[]),
             "pending" => self.values("SELECT e.value_json FROM events e JOIN sync_outbox o ON e.id=o.event_id WHERE e.device_id=?1 ORDER BY e.at_ms,e.id",[string(args,"deviceId")?]),
             "ack" => { self.connection.execute("DELETE FROM sync_outbox WHERE event_id=?1",[string(args,"id")?]).map_err(err)?; Ok(Value::Null) }
@@ -200,9 +207,79 @@ fn project(tx: &rusqlite::Transaction, e: &Value) -> StoreResult<bool> {
                 tx.execute("INSERT INTO settings VALUES (?1,?2,?3,?4) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at_ms=excluded.updated_at_ms,event_id=excluded.event_id WHERE excluded.updated_at_ms>settings.updated_at_ms OR (excluded.updated_at_ms=settings.updated_at_ms AND excluded.event_id>settings.event_id)",params![string(change,"key")?,serialize(&change["value"])?,at,id]).map_err(err)?;
             }
         }
+        "song.saved" | "playlist.saved" => {
+            let table = if kind == "song.saved" { "songs" } else { "playlists" };
+            tx.execute(&format!("INSERT INTO {table} VALUES (?1,?2,?3,?4) ON CONFLICT(id) DO UPDATE SET value_json=excluded.value_json,updated_at_ms=excluded.updated_at_ms,event_id=excluded.event_id WHERE excluded.updated_at_ms>{table}.updated_at_ms OR (excluded.updated_at_ms={table}.updated_at_ms AND excluded.event_id>{table}.event_id)"),params![string(data,"id")?,serialize(data)?,at,id]).map_err(err)?;
+        }
+        "chart.revised" => {
+            let revision = string(data,"revision")?;
+            let old: Option<String> = tx.query_row("SELECT value_json FROM chart_revisions WHERE revision=?1",[revision],|r|r.get(0)).optional().map_err(err)?;
+            if let Some(old) = old {
+                if parse(old)? != *data { return Err("Revisão de cifra em conflito.".into()); }
+            } else {
+                tx.execute("INSERT INTO chart_revisions VALUES (?1,?2,?3,?4,?5)",params![revision,string(data,"chartId")?,string(data,"songId")?,ms(string(data,"createdAt")?)?,serialize(data)?]).map_err(err)?;
+            }
+        }
         _ => return Ok(false),
     }
     Ok(true)
+}
+
+fn http_url(v: &Value) -> bool {
+    v.as_str().is_some_and(|u| (u.starts_with("https://") || u.starts_with("http://")) && u.len() > 8 && !u.contains(char::is_whitespace))
+}
+fn opt_bool(v: &Value, key: &str) -> StoreResult<()> {
+    if v.get(key).is_some_and(|x| !x.is_boolean()) { return Err(format!("Campo inválido: {key}")); }
+    Ok(())
+}
+fn opt_str(v: &Value, key: &str) -> StoreResult<()> {
+    if v.get(key).is_some_and(|x| !x.is_string()) { return Err(format!("Campo inválido: {key}")); }
+    Ok(())
+}
+fn valid_origin(v: &Value) -> bool {
+    match v["kind"].as_str() {
+        Some("usuario") | Some("cifra") => true,
+        Some("arquivo") => v["name"].as_str().is_some_and(|s| !s.trim().is_empty()),
+        Some("fonte") => v["source"].as_str().is_some_and(|s| !s.trim().is_empty()) && v.get("attribution").is_none_or(Value::is_string),
+        _ => false,
+    }
+}
+fn valid_key(k: &str) -> bool {
+    let b = k.as_bytes();
+    let mut i = 1;
+    if b.is_empty() || !(b'A'..=b'G').contains(&b[0]) { return false; }
+    if b.get(i).is_some_and(|c| *c == b'#' || *c == b'b') { i += 1; }
+    if b.get(i) == Some(&b'm') { i += 1; }
+    i == b.len()
+}
+/// Espelho de validateSong em packages/core/src/songs.ts.
+fn validate_song(s: &Value) -> StoreResult<()> {
+    let fail = |m: &str| Err(format!("Música inválida: {m}."));
+    if string(s, "id").is_err() || s["title"].as_str().is_none_or(|t| t.trim().is_empty()) { return fail("id ou título"); }
+    for k in ["artist", "notes", "chartId"] { opt_str(s, k)?; }
+    if let Some(b) = s.get("bpm") {
+        if !b["value"].as_f64().is_some_and(|n| n.is_finite() && (20. ..=400.).contains(&n)) || !valid_origin(&b["origin"]) { return fail("BPM"); }
+    }
+    if let Some(k) = s.get("key") {
+        if !k["value"].as_str().is_some_and(valid_key) || !valid_origin(&k["origin"]) { return fail("tom"); }
+    }
+    if let Some(t) = s.get("timeSignature") {
+        let ok = t.as_str().and_then(|t| t.split_once('/')).is_some_and(|(a, b)| a.parse::<u8>().is_ok_and(|a| (1..=19).contains(&a)) && !a.starts_with('0') && ["2", "4", "8", "16"].contains(&b));
+        if !ok { return fail("compasso"); }
+    }
+    if s.get("capo").is_some_and(|c| !c.as_u64().is_some_and(|c| c <= 12)) { return fail("capo"); }
+    if s.get("phase").is_some_and(|p| !p.as_u64().is_some_and(|p| (1..=4).contains(&p))) { return fail("fase"); }
+    let links = s["links"].as_array().ok_or("Música inválida: links.")?;
+    for l in links {
+        if !["origem", "youtube", "spotify", "outro"].contains(&l["kind"].as_str().unwrap_or("")) || !http_url(&l["url"]) || l.get("label").is_some_and(|x| !x.is_string()) { return fail("links"); }
+    }
+    let tracks = s["tracks"].as_array().ok_or("Música inválida: faixas.")?;
+    for t in tracks {
+        if !["local", "youtube", "spotify", "jamendo", "audius", "soundcloud", "deezer"].contains(&t["source"].as_str().unwrap_or("")) || string(t, "id").is_err() || t["title"].as_str().is_none_or(|x| x.trim().is_empty()) { return fail("faixas"); }
+    }
+    let tags = s["tags"].as_array().ok_or("Música inválida: tags.")?;
+    if !tags.iter().all(|t| t.as_str().is_some_and(|t| !t.trim().is_empty())) { return fail("tags"); }
+    opt_bool(s, "deleted")
 }
 
 pub fn validate_event(e: &Value) -> StoreResult<()> {
@@ -266,6 +343,33 @@ pub fn validate_event(e: &Value) -> StoreResult<()> {
                 .ok_or("Ajustes inválidos.")?;
             for c in changes {
                 validate_setting(c)?;
+            }
+        }
+        "song.saved" => validate_song(data)?,
+        "playlist.saved" => {
+            string(data, "id")?;
+            string(data, "name")?;
+            let ids = data["songIds"].as_array().ok_or("Playlist inválida.")?;
+            let mut seen = std::collections::HashSet::new();
+            for id in ids {
+                let id = id.as_str().filter(|s| !s.trim().is_empty()).ok_or("Playlist inválida.")?;
+                if !seen.insert(id) { return Err("Playlist inválida.".into()); }
+            }
+            opt_bool(data, "deleted")?;
+        }
+        "chart.revised" => {
+            string(data, "chartId")?;
+            string(data, "songId")?;
+            let revision = string(data, "revision")?;
+            ms(string(data, "createdAt")?)?;
+            let chordpro = data["chordpro"].as_str().ok_or("Cifra inválida.")?;
+            if chordpro.chars().count() > 200_000
+                || !["colado", "chordpro", "txt", "manual"].contains(&string(data, "importedFrom")?)
+                || data.get("parentRevision").is_some_and(|p| p.as_str().is_none_or(|p| p.is_empty() || p == revision))
+                || data.get("sourceUrl").is_some_and(|u| !http_url(u))
+                || data.get("supersedes").is_some_and(|v| !v.as_array().is_some_and(|a| a.iter().all(|x| x.as_str().is_some_and(|x| !x.trim().is_empty() && x != revision))))
+            {
+                return Err("Cifra inválida.".into());
             }
         }
         // Tipo de uma versão mais nova: o envelope foi validado; o conteúdo
@@ -350,6 +454,32 @@ mod tests {
         assert_eq!(restantes, 0);
         drop(store);
         for suffix in ["", "-wal", "-shm"] { let _ = std::fs::remove_file(format!("{}{suffix}", path.display())); }
+    }
+    #[test]
+    fn musicas_playlists_e_revisoes_de_cifra() {
+        let mut store = Store::open(":memory:").unwrap();
+        let ev = |id: &str, dev: &str, at: &str, kind: &str, data: Value| json!({"version":1,"id":id,"deviceId":dev,"at":at,"type":kind,"data":data});
+        let song = |title: &str| json!({"id":"s1","title":title,"links":[],"tracks":[],"tags":[],"bpm":{"value":90,"origin":{"kind":"usuario"}},"key":{"value":"Em","origin":{"kind":"cifra"}}});
+        // Fora de ordem: a gravação mais nova vence.
+        store.request("apply", &json!({"events":[ev("e2","b","2026-11-22T12:00:00Z","song.saved",song("Nova"))]})).unwrap();
+        store.request("apply", &json!({"events":[ev("e1","a","2026-11-22T11:00:00Z","song.saved",song("Antiga"))]})).unwrap();
+        let songs = store.request("listSongs", &json!({})).unwrap();
+        assert_eq!(songs[0]["title"], "Nova");
+        assert_eq!(songs.as_array().unwrap().len(), 1);
+        store.request("apply", &json!({"events":[ev("p1","a","2026-11-22T11:00:00Z","playlist.saved",json!({"id":"p","name":"Treino","songIds":["s1"]}))]})).unwrap();
+        assert_eq!(store.request("listPlaylists", &json!({})).unwrap()[0]["songIds"][0], "s1");
+        // Duas edições sobre a mesma revisão ficam guardadas: o conflito é visível.
+        let rev = |r: &str, parent: Option<&str>| { let mut v = json!({"chartId":"c1","songId":"s1","revision":r,"chordpro":"[Em]x\n","importedFrom":"colado","createdAt":"2026-11-22T11:00:00Z"}); if let Some(p) = parent { v["parentRevision"] = json!(p); } v };
+        store.request("apply", &json!({"events":[ev("c1","a","2026-11-22T11:00:00Z","chart.revised",rev("r1",None)),ev("c2","a","2026-11-22T11:01:00Z","chart.revised",rev("ra",Some("r1"))),ev("c3","b","2026-11-22T11:02:00Z","chart.revised",rev("rb",Some("r1")))]})).unwrap();
+        assert_eq!(store.request("chartRevisions", &json!({"chartId":"c1"})).unwrap().as_array().unwrap().len(), 3);
+        // Mesmo ID de revisão com conteúdo diferente é recusado sem gravar nada.
+        let mut other = rev("ra", Some("r1")); other["chordpro"] = json!("[Am]y\n");
+        assert!(store.request("apply", &json!({"events":[ev("c4","b","2026-11-22T11:03:00Z","chart.revised",other)]})).is_err());
+        // Validação espelhada do core.
+        for bad in [json!({"id":"s2","title":"x","links":[],"tracks":[],"tags":[],"bpm":{"value":90}}), json!({"id":"s2","title":"x","links":[],"tracks":[],"tags":[],"key":{"value":"Em7","origin":{"kind":"usuario"}}}), json!({"id":"s2","title":"x","links":[{"kind":"origem","url":"javascript:x"}],"tracks":[],"tags":[]})] {
+            assert!(store.request("apply", &json!({"events":[ev("bad","a","2026-11-22T11:00:00Z","song.saved",bad)]})).is_err());
+        }
+        assert!(store.request("apply", &json!({"events":[ev("bad","a","2026-11-22T11:00:00Z","playlist.saved",json!({"id":"p","name":"x","songIds":["a","a"]}))]})).is_err());
     }
     #[test]
     fn rejeita_versao_futura_sem_rebaixar_banco() {

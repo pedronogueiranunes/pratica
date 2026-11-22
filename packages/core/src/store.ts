@@ -20,7 +20,7 @@ export interface PracticeEvent {
   id: string;
   deviceId: string;
   at: string;
-  type: "practice.added" | "settings.changed" | "routine.saved";
+  type: "practice.added" | "settings.changed" | "routine.saved" | "song.saved" | "playlist.saved" | "chart.revised";
   data: unknown;
 }
 export interface SettingChange { key: string; value: unknown }

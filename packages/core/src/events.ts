@@ -1,5 +1,6 @@
 import { defaultSettings, type PracticeRecord, type Settings } from "./types";
 import { validInputProfiles } from "./tuner";
+import { validateChartRevision, validatePlaylist, validateSong } from "./songs";
 import type { PracticeEvent, SavedRoutine, SettingChange, SettingsPatch } from "./store";
 
 const obj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
@@ -69,7 +70,10 @@ export function validateEvent(v: unknown): asserts v is PracticeEvent {
   else if (v.type === "settings.changed") {
     if (!Array.isArray(v.data) || !v.data.length) throw new Error("Ajustes inválidos.");
     v.data.forEach(validateSetting);
-  } else throw new Error("Tipo de evento desconhecido.");
+  } else if (v.type === "song.saved") validateSong(v.data);
+  else if (v.type === "playlist.saved") validatePlaylist(v.data);
+  else if (v.type === "chart.revised") validateChartRevision(v.data);
+  else throw new Error("Tipo de evento desconhecido.");
 }
 export function settingsFromRows(rows: SettingChange[], deviceId: string): Settings {
   const result = structuredClone(defaultSettings);

@@ -1,0 +1,17 @@
+{
+  "fonte": "docs/03-gosto-musical-e-repertorio.md, tabela Repertório sugerido por fase (16 e 18/11/2026). Só título, artista e fase; linhas sem música definida ficaram de fora.",
+  "musicas": [
+    { "id": "seed-no-mar-natiruts", "title": "No Mar", "artist": "Natiruts", "phase": 1, "tags": ["reggae"] },
+    { "id": "seed-ensenada-sublime", "title": "Ensenada", "artist": "Sublime", "phase": 1, "tags": ["reggae", "ska punk"] },
+    { "id": "seed-until-the-sun-explodes-sublime", "title": "Until The Sun Explodes", "artist": "Sublime", "phase": 2, "tags": ["reggae", "punk"] },
+    { "id": "seed-ftr-sublime", "title": "F.T.R.", "artist": "Sublime", "phase": 2, "tags": ["reggae", "punk"] },
+    { "id": "seed-wet-leg-tiny-desk", "title": "Wet Leg (Tiny Desk Concert)", "artist": "Wet Leg", "phase": 2, "tags": ["indie rock"] },
+    { "id": "seed-tudo-o-que-voce-podia-ser-milton", "title": "Tudo O Que Você Podia Ser", "artist": "Milton Nascimento", "phase": 3, "tags": ["mpb"] },
+    { "id": "seed-silver-springs-fleetwood-mac", "title": "Silver Springs", "artist": "Fleetwood Mac", "phase": 3, "tags": ["rock"] },
+    { "id": "seed-love-like-waves-friendly-fires", "title": "Love Like Waves", "artist": "Friendly Fires", "phase": 3, "tags": ["indie dance"] },
+    { "id": "seed-la-di-da-the-internet", "title": "La Di Da", "artist": "The Internet", "phase": 4, "tags": ["neo soul"] },
+    { "id": "seed-magazine-toro-y-moi", "title": "Magazine", "artist": "Toro y Moi", "phase": 4, "tags": ["indie", "chillwave"] },
+    { "id": "seed-jungle-tiny-desk", "title": "Jungle (Tiny Desk Concert)", "artist": "Jungle", "phase": 4, "tags": ["funk", "soul"] },
+    { "id": "seed-can-you-feel-it-polyphia", "title": "Can You Feel It", "artist": "Polyphia", "tags": ["rock progressivo", "meta longa"] }
+  ]
+}
