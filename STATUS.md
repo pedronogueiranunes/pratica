@@ -1,5 +1,44 @@
 # Status
 
+## Fase 3, parte 3A: músicas e cifras implementadas, validação no Mac pendente (22/11/2026)
+
+Plano e decisões em `docs/06-fase-3-plano.md`. 3B (playlists na interface, exportar/importar, web offline) e 3C (braço completo) ainda não começaram. Nada foi enviado ao GitHub: os commits estão só na `main` local.
+
+### Implementado
+- **Sync tolerante a versões:** um evento de tipo desconhecido vindo de outro Mac fica guardado em `deferred_events` e é projetado quando o app passar a conhecer o tipo, ao abrir o banco. Antes, ele fazia o arquivo inteiro do outro aparelho ser tratado como incompatível.
+- **Core:** acordes em notação brasileira e inglesa; cifra colada (acordes sobre a letra) convertida para ChordPro na coluna original; leitura e escrita de ChordPro; transposição só de exibição, com grafia pelo tom de destino (Em +1 = Fm, Eb, Db7M). Modelo `Song`, `Playlist`, `ChartRevision` com validação, origem explícita de BPM e tom, revisões imutáveis com conflito visível e resolução por `supersedes`.
+- **Persistência:** SQLite `user_version=2` e IndexedDB `pratica.v1` versão 2, migrações só aditivas. Eventos `song.saved` e `playlist.saved` (última gravação vence, exclusão por tombstone) e `chart.revised` (só acrescenta). Validação espelhada TS/Rust.
+- **Semente:** 12 músicas do repertório (`data/repertoire.seed.json`), só título, artista e fase. IDs fixos: não duplica entre Macs e uma música apagada não volta. As linhas "(uma música da lista)" ficaram de fora.
+- **Tela Músicas:** lista com busca sem acento, filtro por fase e "Só com cifra"; detalhe com tom, BPM, compasso, capo, fase e a origem de cada dado; cifra com acorde sobre a sílaba, quebrando só entre palavras; transposição; importação por texto colado ou arquivo (.cho, .chordpro, .pro, .crd, .txt) com prévia e avisos; uso opcional do tom/BPM da própria cifra; link de origem; editor; exclusão com confirmação; comparação e escolha entre versões em conflito. Rascunhos ficam acima das rotas. Janela estreita mostra um painel por vez.
+- A letra da cifra de teste fornecida pelo Pedro não está no repositório (público): o fixture tem a mesma estrutura com texto neutro.
+
+### Verificações (22/11/2026)
+- Core: **62 testes passaram** (32 anteriores, 17 de cifra/acordes, 13 de músicas) e `tsc` passou. Rodados numa cópia isolada, porque os `node_modules` do projeto são de macOS.
+- `practice-store`: **9 testes Rust passaram** (6 anteriores, evento de tipo futuro no sync, migração v1→v2 com reprojeção, músicas/playlists/revisões), clippy sem avisos, exemplo `bridge` compila. Rodado numa cópia do crate na nuvem, Rust 1.97. O `audio-engine` não foi alterado nem testado de novo.
+- Contrato compartilhado: **SQLite real, 13 verificações passaram** (ponte Rust). **IndexedDB, 13 verificações passaram em `fake-indexeddb`** no Node, não num navegador real. Migração de um IndexedDB v1 com registro existente para v2 conferida no mesmo ambiente.
+- `pnpm typecheck` (core e desktop) e `pnpm --filter desktop build:web` passaram numa cópia do repositório com dependências instaladas no Linux.
+- Revisão visual no Chromium headless do webapp compilado: claro e escuro a 1440 px e janela estreita a 760 px; lista, detalhe, importação com a cifra de teste, cifra salva e transposta, editor. Console sem erros. Detector da Impeccable sem apontamentos. A comparação de conflito não foi vista renderizada.
+- **Não executado:** compilação do Tauri (`src-tauri/src/storage.rs` ganhou três operações na lista permitida), app do Mac, `pnpm test` no Mac, contrato IndexedDB no Chrome, sync real entre dois Macs.
+
+### Como testar a 3A
+
+```sh
+cd ~/Dev/guitar-exercises-app
+nvm use 24
+pnpm --filter @gx/core test
+cargo test -p practice-store
+pnpm typecheck
+PRACTICE_TEST_BROWSER=chrome pnpm --filter desktop test   # SQLite + IndexedDB no Chrome
+pnpm build:app && open "target/release/bundle/macos/Prática.app"
+```
+
+1. Abrir Músicas: as 12 músicas do repertório aparecem, sem tom, BPM nem cifra.
+2. Escolher uma, Adicionar cifra, colar uma cifra do Cifra Club. Conferir a prévia (acordes na sílaba certa, avisos), salvar, reabrir o app e abrir sem internet.
+3. Transpor para cima e para baixo; a cifra salva não muda. Editar cifra, salvar e conferir.
+4. Abrir um arquivo ChordPro com `{key:}` e `{tempo:}`: a opção de usar tom e BPM aparece só se a música ainda não tiver esses dados, e a origem mostra o nome do arquivo.
+5. Nova música, editar, apagar. Buscar sem acento, filtrar por fase e "Só com cifra". Janela estreita, teclado, claro e escuro.
+6. Dois Macs: atualizar os dois antes de usar Músicas. Editar a mesma cifra offline nos dois, sincronizar e resolver o conflito em Comparar.
+
 ## Fase 2: afinador e perfis implementados, validação de áudio pendente (21/11/2026)
 
 ### Publicação (22/11/2026)
