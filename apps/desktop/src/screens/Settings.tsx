@@ -2,30 +2,37 @@ import type { Theme } from "@gx/core";
 import { useApp } from "../lib/app-state";
 import { suggestion, useDevices } from "../lib/devices";
 import { usePractice } from "../lib/practice-state";
-import { engine } from "../lib/engine";
+import { engine, isNative } from "../lib/engine";
 
 const THEMES: Theme[] = ["sistema", "claro", "escuro"];
 
 export function Settings() {
   const { t, settings, update } = useApp();
   const { sync } = usePractice();
-  const { devices, instrument, playback, latency } = useDevices();
+  const { devices, instrument, playback, latency, measuring, measureResult, measure } = useDevices();
   const inputs = devices.filter((d) => d.isInput && d.inputChannels > 0);
   const outputs = devices.filter((d) => d.isOutput && d.outputChannels > 0);
   const inSuggest = suggestion(instrument, settings.tuner.inputDeviceId, devices, true);
   const outSuggest = suggestion(playback, settings.metronome.outputDeviceId, devices, false);
   const nameOf = (id: string) => devices.find((d) => d.id === id)?.name ?? id;
+  // O selo só aparece onde diz algo: o melhor da lista e avisos de Bluetooth.
   const reason = (id: string, list: typeof instrument) => {
-    const r = list.find((x) => x.deviceId === id);
-    return r ? t(`devices.reason.${r.reason}`) : "";
+    const index = list.findIndex((x) => x.deviceId === id);
+    const r = list[index];
+    if (!r) return "";
+    if (r.reason === "bluetoothWarning") return t("devices.reason.bluetoothWarning");
+    if (index !== 0 || list.length < 2) return r.reason === "onlyOption" ? t("devices.reason.onlyOption") : "";
+    const measuredBest = latency[id]?.[list === instrument ? "input" : "output"] != null;
+    return r.reason === "audioInterface" ? t("devices.reason.audioInterface") : measuredBest ? t("devices.reason.lowestLatency") : "";
   };
   const ms = (id: string, dir: "input" | "output", list: typeof instrument) => {
     const measured = latency[id]?.[dir];
     if (measured != null) return `${t("devices.latency", { ms: measured })} no stream`;
     const profile = dir === "input" ? settings.tuner.inputProfiles.find((p) => p.deviceId === id) : null;
     if (profile?.inputMs != null) return `${t("devices.latency", { ms: profile.inputMs.toFixed(1) })} no perfil salvo`;
+    // Sem medida, a estimativa vem do menor buffer possível e quase sempre dá ~0 ms. Não mostrar um número falso.
     const est = list.find((x) => x.deviceId === id)?.estimatedMs;
-    return est != null ? `cerca de ${t("devices.latency", { ms: Math.round(est) })}` : "";
+    return est != null && est >= 5 ? `cerca de ${t("devices.latency", { ms: Math.round(est) })}` : "sem medida";
   };
 
   return (
@@ -63,6 +70,7 @@ export function Settings() {
           <div className="panel-head">
             <h2>Áudio</h2>
             <span className="spacer" />
+            {isNative && <button className="btn" disabled={measuring} onClick={measure}>{measuring ? "Medindo…" : "Medir atraso"}</button>}
             <button className="btn" onClick={() => void engine.refresh()}>
               Procurar de novo
             </button>
@@ -116,6 +124,11 @@ export function Settings() {
             </select>
           </div>
 
+          {measuring && <p className="muted small" role="status">Abrindo cada entrada e saída por um instante, em silêncio. Leva alguns segundos.</p>}
+          {measureResult && !measuring && <p className={`small ${measureResult.busy ? "error-text" : "muted"}`} role="status">
+            {measureResult.busy ? "Pare o metrônomo e o afinador para medir." : measureResult.measured ? `${measureResult.measured} medições feitas agora.` : "Nenhum dispositivo respondeu."}
+            {measureResult.failed.length > 0 && ` Sem resposta: ${measureResult.failed.join(", ")}.`}
+          </p>}
           <h3 className="phase-title" style={{ marginTop: 24 }}>Entradas, da melhor para a pior</h3>
           <div className="list">
             {instrument.length === 0 && <p className="muted">Nenhuma entrada encontrada.</p>}
@@ -123,7 +136,7 @@ export function Settings() {
               <div className="row" key={r.deviceId}>
                 <span className="title">{nameOf(r.deviceId)}</span>
                 <span className="meta">
-                  <span className="tag">{reason(r.deviceId, instrument)}</span>
+                  {reason(r.deviceId, instrument) && <span className="tag">{reason(r.deviceId, instrument)}</span>}
                   <span>{ms(r.deviceId, "input", instrument)}</span>
                 </span>
               </div>
@@ -135,14 +148,14 @@ export function Settings() {
               <div className="row" key={r.deviceId}>
                 <span className="title">{nameOf(r.deviceId)}</span>
                 <span className="meta">
-                  <span className="tag">{reason(r.deviceId, playback)}</span>
+                  {reason(r.deviceId, playback) && <span className="tag">{reason(r.deviceId, playback)}</span>}
                   <span>{ms(r.deviceId, "output", playback)}</span>
                 </span>
               </div>
             ))}
           </div>
           <p className="muted small" style={{ marginBottom: 0 }}>
-            O Mac confere as entradas a cada 3 segundos; o navegador avisa quando elas mudam. Use o afinador em Ferramentas para conferir e salvar o perfil de cada entrada. Latências salvas podem mudar ao reconectar.
+            {isNative ? "Medir atraso abre cada dispositivo por um instante e guarda o resultado neste Mac. O número vem dos horários que o macOS informa para o áudio; não inclui o caminho do som pelo ar nem o cabo. Medidas podem mudar ao reconectar." : "No navegador, o atraso aparece depois de usar o metrônomo ou o afinador com cada dispositivo."}
           </p>
         </section>
 

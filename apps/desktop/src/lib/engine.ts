@@ -50,6 +50,12 @@ export const engine = {
     if (!isNative) return rankDevices(devices, purpose);
     return invoke<Recommendation[]>("audio_rank", { devices, purpose });
   },
+  /** Só no Mac: abre cada dispositivo por um instante para medir o atraso real. */
+  async measureLatency() {
+    if (!isNative) throw new Error("A medição de todos os dispositivos só existe no app do Mac.");
+    await hookNative();
+    await invoke("audio_measure");
+  },
   async refresh() {
     if (isNative) await invoke("audio_refresh");
     else emit({ type: "devices", devices: await web().devices() });

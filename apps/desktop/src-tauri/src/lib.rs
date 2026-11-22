@@ -56,6 +56,11 @@ fn audio_refresh(audio: State<Audio>) {
     audio.0.refresh_devices();
 }
 
+#[tauri::command]
+fn audio_measure(audio: State<Audio>) {
+    audio.0.measure_latency();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -80,6 +85,7 @@ pub fn run() {
             audio_devices,
             audio_rank,
             audio_refresh,
+            audio_measure,
             metronome_start,
             metronome_update,
             metronome_stop,

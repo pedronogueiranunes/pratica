@@ -22,6 +22,8 @@ const DEVICE_POLL: Duration = Duration::from_secs(3);
 const TUNER_WINDOW: usize = 4096;
 const TUNER_EMIT_EVERY: Duration = Duration::from_millis(30);
 const SILENCE_RMS: f32 = 0.004;
+const MEASURE_TIMEOUT: Duration = Duration::from_millis(1500);
+const MEASURE_SETTLE: Duration = Duration::from_millis(250);
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -42,6 +44,9 @@ pub enum EngineEvent {
     Error { code: ErrorCode, message: String, direction: Option<Direction> },
     #[serde(rename_all = "camelCase")]
     TunerStream { device_id: String, channel: u16, channels: u16, sample_rate: u32, buffer_frames: Option<u32>, source: &'static str },
+    /// Medição de atraso de todos os dispositivos: começou, terminou ou foi recusada.
+    #[serde(rename_all = "camelCase")]
+    MeasureState { running: bool, measured: u32, failed: Vec<String>, busy: bool },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -68,6 +73,7 @@ enum Command {
     SetA4(f32),
     StopTuner,
     RefreshDevices,
+    MeasureLatency,
     Shutdown,
 }
 
@@ -98,6 +104,11 @@ impl Drop for ThreadGuard {
 }
 
 impl EngineHandle {
+    /// Abre cada entrada e saída por um instante para medir o atraso real.
+    /// Recusa enquanto o metrônomo ou o afinador estiverem ligados.
+    pub fn measure_latency(&self) {
+        let _ = self.tx.send(Command::MeasureLatency);
+    }
     pub fn start_metronome(&self, device_id: Option<String>, settings: MetronomeSettings) {
         let _ = self.tx.send(Command::StartMetronome { device_id, settings });
     }
@@ -328,12 +339,63 @@ impl EngineThread {
                 self.tuner = None;
                 (self.emit)(EngineEvent::TunerState { running: false, device_id: None });
             }
+            Command::MeasureLatency => self.measure_latency(),
             Command::RefreshDevices => {
                 self.known_devices.clear();
                 self.last_poll = Instant::now() - DEVICE_POLL;
             }
             Command::Shutdown => {}
         }
+    }
+
+    fn measure_latency(&mut self) {
+        if self.metronome.is_some() || self.tuner.is_some() {
+            (self.emit)(EngineEvent::MeasureState { running: false, measured: 0, failed: Vec::new(), busy: true });
+            return;
+        }
+        (self.emit)(EngineEvent::MeasureState { running: true, measured: 0, failed: Vec::new(), busy: false });
+        let mut measured = 0;
+        let mut failed = Vec::new();
+        // Lê o atraso do stream assim que o primeiro callback publica um valor.
+        let wait = |cell: &Arc<AtomicU32>| -> Option<f32> {
+            let start = Instant::now();
+            while start.elapsed() < MEASURE_TIMEOUT {
+                std::thread::sleep(Duration::from_millis(20));
+                let ms = f32::from_bits(cell.load(Ordering::Relaxed));
+                if ms > 0.0 && ms.is_finite() {
+                    // Mais alguns callbacks para não ficar com o primeiro, que costuma variar.
+                    std::thread::sleep(MEASURE_SETTLE);
+                    let settled = f32::from_bits(cell.load(Ordering::Relaxed));
+                    return Some(if settled > 0.0 && settled.is_finite() { settled } else { ms });
+                }
+            }
+            None
+        };
+        for d in list_devices() {
+            if d.is_input && d.input_channels > 0 {
+                match self.open_tuner(Some(&d.id), 0, 440.0, None) {
+                    Ok(t) => match wait(&t.latency_ms) {
+                        Some(ms) => { measured += 1; (self.emit)(EngineEvent::Latency { direction: Direction::Input, device_id: d.id.clone(), ms }); }
+                        None => failed.push(d.name.clone()),
+                    },
+                    Err(_) => failed.push(d.name.clone()),
+                }
+            }
+            if d.is_output && d.output_channels > 0 {
+                let silent = MetronomeSettings { volume: 0.0, ..MetronomeSettings::default() };
+                match self.open_metronome(Some(&d.id), silent) {
+                    Ok(m) => match wait(&m.latency_ms) {
+                        Some(ms) => { measured += 1; (self.emit)(EngineEvent::Latency { direction: Direction::Output, device_id: d.id.clone(), ms }); }
+                        None => failed.push(d.name.clone()),
+                    },
+                    Err(_) => failed.push(d.name.clone()),
+                }
+            }
+        }
+        // Erros de stream gerados durante a medição não devem derrubar nada depois.
+        while self.errors_rx.try_recv().is_ok() {}
+        failed.dedup();
+        (self.emit)(EngineEvent::MeasureState { running: false, measured, failed, busy: false });
     }
 
     /// Trabalho periódico: repassa cliques, analisa o afinador, vigia dispositivos.
