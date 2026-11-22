@@ -20,3 +20,5 @@ export * from "./chords";
 export * from "./chart-import";
 export * from "./chordpro";
 export * from "./songs";
+export * from "./chord-shapes";
+export * from "./chord-trainer";
