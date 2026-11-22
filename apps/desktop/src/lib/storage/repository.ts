@@ -1,9 +1,10 @@
-import { flattenSettings, settingsFromRows, validateEvent, validateLog, validateRoutine, validDate,
+import { validateChartRevision, validatePlaylist, validateSong, type ChartDraft, type ChartRevision, type Playlist, type Song, type SongStore,
+  flattenSettings, settingsFromRows, validateEvent, validateLog, validateRoutine, validDate,
   type LogRange, type PracticeEvent, type PracticeRecord, type PracticeStore, type SavedRoutine,
   type SettingChange, type SettingsPatch, type StoreBackend } from "@gx/core";
 
 /** Mesmo contrato no Tauri e no IndexedDB. Sem dependência de React. */
-export class PracticeRepository implements PracticeStore {
+export class PracticeRepository implements PracticeStore, SongStore {
   constructor(readonly backend: StoreBackend, readonly deviceId: string) {}
   private async event(type: PracticeEvent["type"], data: unknown): Promise<PracticeEvent> {
     const time = await this.backend.request("nextTimestamp") as number;
@@ -29,6 +30,30 @@ export class PracticeRepository implements PracticeStore {
   async saveSettings(patch: SettingsPatch) {
     const changes = flattenSettings(patch, this.deviceId);
     if (changes.length) await this.mergeEvents([await this.event("settings.changed", changes)]);
+  }
+  async listSongs() { return this.backend.request("listSongs") as Promise<Song[]>; }
+  async saveSong(song: Song) {
+    validateSong(song);
+    await this.mergeEvents([await this.event("song.saved", song)]);
+  }
+  async listPlaylists() { return this.backend.request("listPlaylists") as Promise<Playlist[]>; }
+  async savePlaylist(playlist: Playlist) {
+    validatePlaylist(playlist);
+    await this.mergeEvents([await this.event("playlist.saved", playlist)]);
+  }
+  async chartRevisions(chartId: string) { return this.backend.request("chartRevisions", { chartId }) as Promise<ChartRevision[]>; }
+  async reviseChart(draft: ChartDraft) {
+    const event = await this.event("chart.revised", null);
+    const revision: ChartRevision = {
+      chartId: draft.chartId ?? crypto.randomUUID(), songId: draft.songId, revision: crypto.randomUUID(),
+      chordpro: draft.chordpro, importedFrom: draft.importedFrom, createdAt: event.at,
+      ...(draft.parentRevision ? { parentRevision: draft.parentRevision } : {}),
+      ...(draft.supersedes?.length ? { supersedes: draft.supersedes } : {}),
+      ...(draft.sourceUrl ? { sourceUrl: draft.sourceUrl } : {}),
+    };
+    validateChartRevision(revision);
+    await this.mergeEvents([{ ...event, data: revision }]);
+    return revision;
   }
   async mergeEvents(events: PracticeEvent[]) {
     events.forEach(validateEvent);

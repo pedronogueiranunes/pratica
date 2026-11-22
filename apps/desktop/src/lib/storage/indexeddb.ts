@@ -1,4 +1,4 @@
-import { validateEvent, type PracticeEvent, type StoreBackend, type LogRange, type SettingChange, type PracticeRecord, type SavedRoutine } from "@gx/core";
+import { validateEvent, type PracticeEvent, type StoreBackend, type LogRange, type SettingChange, type PracticeRecord, type SavedRoutine, type ChartRevision } from "@gx/core";
 
 const canonical = (value: unknown): string => JSON.stringify(value, (_, v) => v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) : v);
 
@@ -14,19 +14,27 @@ export class IndexedDbBackend implements StoreBackend {
   private db: Promise<IDBDatabase>;
   constructor(name = "pratica.v1") {
     this.db = new Promise((resolve, reject) => {
-      const req = indexedDB.open(name, 1);
+      const req = indexedDB.open(name, 2);
       req.onerror = () => reject(req.error);
       req.onblocked = () => reject(new Error("Feche as outras abas do Prática para atualizar os dados."));
-      req.onupgradeneeded = () => {
+      req.onupgradeneeded = (change) => {
         const db = req.result;
-        const logs = db.createObjectStore("practice_logs", { keyPath: "id" });
-        logs.createIndex("at_ms", "atMs"); logs.createIndex("exercise_at", ["exerciseId", "atMs"]);
-        db.createObjectStore("routines", { keyPath: "id" });
-        db.createObjectStore("settings", { keyPath: "key" });
-        const events = db.createObjectStore("events", { keyPath: "id" });
-        events.createIndex("device", "deviceId");
-        db.createObjectStore("sync_outbox", { keyPath: "eventId" });
-        db.createObjectStore("local_meta", { keyPath: "key" });
+        if (change.oldVersion < 1) {
+          const logs = db.createObjectStore("practice_logs", { keyPath: "id" });
+          logs.createIndex("at_ms", "atMs"); logs.createIndex("exercise_at", ["exerciseId", "atMs"]);
+          db.createObjectStore("routines", { keyPath: "id" });
+          db.createObjectStore("settings", { keyPath: "key" });
+          const events = db.createObjectStore("events", { keyPath: "id" });
+          events.createIndex("device", "deviceId");
+          db.createObjectStore("sync_outbox", { keyPath: "eventId" });
+          db.createObjectStore("local_meta", { keyPath: "key" });
+        }
+        if (change.oldVersion < 2) {
+          // v2: músicas, playlists e revisões de cifra. Só cria; nada é migrado.
+          db.createObjectStore("songs", { keyPath: "id" });
+          db.createObjectStore("playlists", { keyPath: "id" });
+          db.createObjectStore("chart_revisions", { keyPath: "revision" }).createIndex("chart", "chartId");
+        }
       };
       req.onsuccess = () => { req.result.onversionchange = () => req.result.close(); resolve(req.result); };
     });
@@ -38,7 +46,7 @@ export class IndexedDbBackend implements StoreBackend {
     if (operation === "apply") {
       const events = args.events as PracticeEvent[];
       events.forEach(validateEvent);
-      const tx = db.transaction(["events", "practice_logs", "routines", "settings", "sync_outbox"], "readwrite");
+      const tx = db.transaction(["events", "practice_logs", "routines", "settings", "sync_outbox", "songs", "playlists", "chart_revisions"], "readwrite");
       const completion = done(tx);
       try {
         for (const e of events) {
@@ -59,7 +67,18 @@ export class IndexedDbBackend implements StoreBackend {
             const store = tx.objectStore("routines");
             const old = await result(store.get(routine.id)) as Row | undefined;
             if (newer(e, old)) store.put({ id: routine.id, value: routine, atMs, eventId: e.id });
-          } else {
+          } else if (e.type === "song.saved" || e.type === "playlist.saved") {
+            const item = e.data as { id: string };
+            const store = tx.objectStore(e.type === "song.saved" ? "songs" : "playlists");
+            const old = await result(store.get(item.id)) as Row | undefined;
+            if (newer(e, old)) store.put({ id: item.id, value: item, atMs, eventId: e.id });
+          } else if (e.type === "chart.revised") {
+            const rev = e.data as ChartRevision;
+            const store = tx.objectStore("chart_revisions");
+            const old = await result(store.get(rev.revision)) as { value: ChartRevision } | undefined;
+            if (old && canonical(old.value) !== canonical(rev)) throw new Error("Revisão de cifra em conflito.");
+            if (!old) store.add({ revision: rev.revision, chartId: rev.chartId, createdAtMs: Date.parse(rev.createdAt), value: rev });
+          } else if (e.type === "settings.changed") {
             const store = tx.objectStore("settings");
             for (const change of e.data as SettingChange[]) {
               const old = await result(store.get(change.key)) as Row | undefined;
@@ -94,6 +113,16 @@ export class IndexedDbBackend implements StoreBackend {
       const store = tx.objectStore("local_meta");
       if (operation === "metaSet") { store.put(args); await completion; return null; }
       const row = await result(store.get(args.key as string)); await completion; return row?.value ?? null;
+    }
+    if (operation === "listSongs" || operation === "listPlaylists") {
+      const tx = db.transaction(operation === "listSongs" ? "songs" : "playlists", "readonly"); const completion = done(tx);
+      const rows = await result(tx.objectStore(operation === "listSongs" ? "songs" : "playlists").getAll()) as Row[]; await completion;
+      return rows.map((row) => row.value);
+    }
+    if (operation === "chartRevisions") {
+      const tx = db.transaction("chart_revisions", "readonly"); const completion = done(tx);
+      const rows = await result(tx.objectStore("chart_revisions").index("chart").getAll(args.chartId as string)) as { createdAtMs: number; revision: string; value: ChartRevision }[]; await completion;
+      return rows.sort((a, b) => a.createdAtMs - b.createdAtMs || (a.revision < b.revision ? -1 : 1)).map((row) => row.value);
     }
     const table = operation === "events" ? "events" : operation === "getRoutine" ? "routines" : operation === "getSettings" ? "settings" : "practice_logs";
     const tx = db.transaction(table, "readonly"); const completion = done(tx);

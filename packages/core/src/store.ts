@@ -1,5 +1,6 @@
 import type { PracticeRecord, Settings } from "./types";
 import type { RoutineBlock } from "./routine";
+import type { ChartImport, ChartRevision, Playlist, Song } from "./songs";
 
 export interface LogRange { from?: string; to?: string; exerciseId?: string }
 export interface SavedRoutine { id: string; name: string; blocks: RoutineBlock[] }
@@ -26,4 +27,24 @@ export interface PracticeEvent {
 export interface SettingChange { key: string; value: unknown }
 export interface StoreBackend {
   request(operation: string, data?: unknown): Promise<unknown>;
+}
+
+/** Dados para criar uma revisão; o repositório gera IDs e data. */
+export interface ChartDraft {
+  chartId?: string;
+  songId: string;
+  chordpro: string;
+  importedFrom: ChartImport;
+  sourceUrl?: string;
+  parentRevision?: string;
+  supersedes?: string[];
+}
+export interface SongStore {
+  listSongs(): Promise<Song[]>;
+  saveSong(song: Song): Promise<void>;
+  listPlaylists(): Promise<Playlist[]>;
+  savePlaylist(playlist: Playlist): Promise<void>;
+  chartRevisions(chartId: string): Promise<ChartRevision[]>;
+  /** Grava a revisão e devolve o que foi salvo. */
+  reviseChart(draft: ChartDraft): Promise<ChartRevision>;
 }

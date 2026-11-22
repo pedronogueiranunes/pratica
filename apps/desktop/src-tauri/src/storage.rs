@@ -25,7 +25,8 @@ pub async fn practice_request(
     match operation.as_str() {
         "deviceId" => Ok(json!(device_id(&mut store)?)),
         "nextTimestamp" | "apply" | "listLogs" | "countByExercise" | "saveRoutine"
-        | "getRoutine" | "getSettings" | "events" | "metaGet" | "metaSet" => {
+        | "getRoutine" | "getSettings" | "events" | "metaGet" | "metaSet" | "listSongs"
+        | "listPlaylists" | "chartRevisions" => {
             store.request(&operation, &data)
         }
         _ => Err("Operação desconhecida.".into()),

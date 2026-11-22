@@ -12,7 +12,7 @@
 - `Song`, `Playlist`, `Chart` em `packages/core` (`songs.ts`, `chordpro.ts`, `chart-import.ts`).
 - Eventos `song.saved` e `playlist.saved` (LWW por id, exclusão por tombstone) e `chart.revised` (só acrescenta, fusão por revisão).
 - Origem explícita de BPM e tom: usuário, arquivo, diretiva da cifra ou fonte licenciada. O app nunca estima BPM.
-- SQLite `user_version=2` e IndexedDB `pratica.v2`, migração só aditiva.
+- SQLite `user_version=2` e IndexedDB `pratica.v1` na versão 2 (mesmo nome, para o webapp publicado não perder dados), migração só aditiva.
 
 ## Achado antes de começar
 Em `crates/practice-store/src/sync.rs`, um evento de tipo desconhecido faz `apply` falhar e o arquivo do outro aparelho é tratado como incompatível. Um Mac desatualizado deixaria de sincronizar tudo. Primeiro commit da fase: guardar eventos desconhecidos sem aplicar e seguir a fila, com teste Rust; espelhar no IndexedDB.
