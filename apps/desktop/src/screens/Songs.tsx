@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  chartState, chordsUsed, filterSongs, parseChordPro, plainTextToChordPro, transposeDoc, transposeChord,
+  chartState, chordsUsed, filterSongs, shapesFor, parseChordPro, plainTextToChordPro, transposeDoc, transposeChord,
   type ChartRevision, type DataOrigin, type Song,
 } from "@gx/core";
 import { useSongs, type ImportDraft } from "../lib/songs-state";
 import { ChordChart } from "../components/ChordChart";
+import { ChordCard } from "../components/ChordDiagram";
+import { useNav } from "../lib/nav";
 
 const KEYS = ["C", "C#", "Db", "D", "Eb", "E", "F", "F#", "Gb", "G", "Ab", "A", "Bb", "B"];
 const PHASES = [1, 2, 3, 4] as const;
@@ -162,13 +164,36 @@ function SongView({ song }: { song: Song }) {
       <div><div className="chart-compare-head"><span>Outra versão</span><button className="btn" disabled={busy} onClick={() => resolve(state.conflicts[0]!)}>Ficar com esta</button></div><ChordChart doc={other} label="Outra versão" /></div>
     </div>}
     {!comparing && (doc ? <>
-      <p className="chart-chords num" aria-label="Acordes usados">{chordsUsed(doc).join("  ")}</p>
+      <ChordStrip chords={chordsUsed(doc)} />
       <ChordChart doc={doc} label={`Cifra de ${song.title}`} />
     </> : song.chartId && !revisions.length && !loadError ? <p className="muted">Abrindo a cifra…</p>
       : <div className="chart-empty">
         <p>Sem cifra ainda. Cole do site que você usa ou abra um arquivo ChordPro. Ela fica salva aqui e abre sem internet.</p>
         <button className="btn primary" onClick={() => openImport("colado")}>Adicionar cifra</button>
       </div>)}
+  </div>;
+}
+
+/** Diagramas dos acordes da cifra, na ordem em que aparecem. Clique troca a forma. */
+function ChordStrip({ chords }: { chords: string[] }) {
+  const nav = useNav();
+  const [variant, setVariant] = useState<Record<string, number>>({});
+  if (!chords.length) return null;
+  return <div className="chord-strip-songs">
+    <div className="chord-strip-scroll" role="list" aria-label="Acordes da música">
+      {chords.map((name) => {
+        const r = shapesFor(name);
+        const i = (variant[name] ?? 0) % Math.max(1, r.shapes.length);
+        return <div role="listitem" key={name}>
+          <ChordCard name={name} diagram={r.shapes[i] ?? null} size="sm" generated={r.source === "gerada"}
+            onClick={r.shapes.length > 1 ? () => setVariant((v) => ({ ...v, [name]: i + 1 })) : undefined} />
+        </div>;
+      })}
+    </div>
+    <div className="chord-strip-foot">
+      <span className="muted small">Clique num acorde para ver outra forma.</span>
+      {chords.length > 1 && <button className="btn ghost" onClick={() => nav.openChordTrainer(chords.slice(0, 8))}>Treinar a troca destes acordes</button>}
+    </div>
   </div>;
 }
 

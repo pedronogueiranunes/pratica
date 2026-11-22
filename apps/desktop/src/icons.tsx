@@ -132,3 +132,13 @@ export const IconWave = (p: P) => (
     <path d="M2.5 10h2l1.5-4 2.5 9 2.5-11 2.5 9 1.5-3h2.5" />
   </Base>
 );
+
+/** Acordes: diagrama com três dedos. */
+export const IconChords = (p: P) => (
+  <Base {...p}>
+    <path d="M5 3.5h10M5 3.5v13M8.33 3.5v13M11.67 3.5v13M15 3.5v13M5 7.75h10M5 12h10" />
+    <circle cx="8.33" cy="10" r="1.6" fill="currentColor" stroke="none" />
+    <circle cx="11.67" cy="5.6" r="1.6" fill="currentColor" stroke="none" />
+    <circle cx="15" cy="14.2" r="1.6" fill="currentColor" stroke="none" />
+  </Base>
+);

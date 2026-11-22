@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { exerciseVisual, youtubeId } from "@gx/core";
+import { PRESET_PAIRS, exerciseVisual, youtubeId } from "@gx/core";
 import { useApp } from "../lib/app-state";
 import { useMetronome } from "../lib/metronome";
 import { useNav } from "../lib/nav";
@@ -79,6 +79,7 @@ export function Exercise({ id }: { id: string }) {
           </p>
           <h1>{ex.nome}</h1>
           <p className="ex-desc">{ex.descricao}</p>
+          {ex.tipo === "acordes" && <button className="btn ex-trainer" onClick={() => nav.openChordTrainer(ex.id === "f1-troca-acordes" ? PRESET_PAIRS[0]! : visual?.diagrams.map((d) => d.name.split(" ")[0]!).filter((n, i, a) => a.indexOf(n) === i).slice(0, 8) ?? PRESET_PAIRS[0]!)}>Treinar a troca com diagramas</button>}
         </div>
       </header>
 

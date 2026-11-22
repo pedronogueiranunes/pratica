@@ -29,7 +29,11 @@ export function MetronomePanel({ compact = false }: { compact?: boolean }) {
     [m],
   );
 
+  const tapRef = useRef<HTMLButtonElement>(null);
   const onTap = () => {
+    // Reinicia a animação mesmo em toques rápidos seguidos.
+    const el = tapRef.current;
+    if (el) { el.classList.remove("pulse"); void el.offsetWidth; el.classList.add("pulse"); }
     const now = performance.now();
     taps.current = [...taps.current, now].slice(-9);
     const bpm = tapTempo(taps.current);
@@ -70,7 +74,7 @@ export function MetronomePanel({ compact = false }: { compact?: boolean }) {
           {m.running ? <IconStop /> : <IconPlay />}
           {m.running ? t("metronome.stop") : t("metronome.start")}
         </button>
-        <button className="btn big" onClick={onTap}>
+        <button ref={tapRef} className="btn big tap-button" onClick={onTap} onAnimationEnd={(e) => { if (e.animationName === "tap-ring" || e.animationName === "tap-flash") e.currentTarget.classList.remove("pulse"); }}>
           <IconTap />
           {t("metronome.tap")}
         </button>

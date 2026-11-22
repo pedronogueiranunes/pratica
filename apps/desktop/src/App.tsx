@@ -7,6 +7,7 @@ import {
   IconCompanion,
   IconLab,
   IconMusic,
+  IconChords,
   IconRoadmap,
   IconSettings,
   IconToday,
@@ -22,16 +23,18 @@ import { Lab } from "./screens/Lab";
 import { Placeholder } from "./screens/Placeholder";
 import { Exercise } from "./screens/Exercise";
 import { Songs } from "./screens/Songs";
+import { Chords, presetTrainer } from "./screens/Chords";
 import { NavContext } from "./lib/nav";
 import type { MessageKey } from "@gx/core";
 
-type Route = "exercicio" | "hoje" | "roadmap" | "calendario" | "musicas" | "companion" | "ferramentas" | "ajustes" | "laboratorio";
+type Route = "exercicio" | "hoje" | "roadmap" | "calendario" | "musicas" | "acordes" | "companion" | "ferramentas" | "ajustes" | "laboratorio";
 
 const NAV: { id: Route; icon: ReactNode; key: MessageKey }[] = [
   { id: "hoje", icon: <IconToday />, key: "nav.hoje" },
   { id: "roadmap", icon: <IconRoadmap />, key: "nav.roadmap" },
   { id: "calendario", icon: <IconCalendar />, key: "nav.calendario" },
   { id: "musicas", icon: <IconMusic />, key: "nav.musicas" },
+  { id: "acordes", icon: <IconChords />, key: "nav.acordes" },
   { id: "companion", icon: <IconCompanion />, key: "nav.companion" },
   { id: "ferramentas", icon: <IconTools />, key: "nav.ferramentas" },
 ];
@@ -65,17 +68,18 @@ export function App() {
       document.querySelector(".main")?.scrollTo(0, 0);
     },
     back: () => setRoute(prevRoute),
+    openChordTrainer: (chords: string[]) => { presetTrainer(chords); setRoute("acordes"); document.querySelector(".main")?.scrollTo(0, 0); },
   };
   useEffect(() => {
     if (!isNative) document.body.classList.add("no-vibrancy");
   }, []);
 
   // Atalhos: espaço liga e desliga o metrônomo, setas mudam o bpm
-  // (com Shift, de 4 em 4), Cmd+1 a 8 trocam de tela.
+  // (com Shift, de 4 em 4), Cmd+1 a 9 trocam de tela.
   useEffect(() => {
     const all = [...NAV, ...BOTTOM];
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey && /^[1-8]$/.test(e.key)) {
+      if (e.metaKey && /^[1-9]$/.test(e.key)) {
         const r = all[Number(e.key) - 1];
         if (r) {
           e.preventDefault();
@@ -142,6 +146,7 @@ export function App() {
         {route === "laboratorio" && <Lab />}
         {route === "calendario" && <Calendar />}
         {route === "musicas" && <Songs />}
+        {route === "acordes" && <Chords />}
         {route === "companion" && (
           <Placeholder title={t("nav.companion")} icon={<IconCompanion size={40} />} phase={5}>
             A cifra rola no tempo da música enquanto você toca.
