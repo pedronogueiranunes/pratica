@@ -14,6 +14,7 @@ import { MetronomeProvider } from "./lib/metronome";
 import { PracticeProvider } from "./lib/practice-state";
 import { App } from "./App";
 import { TunerProvider } from "./lib/tuner";
+import { initOffline } from "./lib/offline";
 import { SongsProvider } from "./lib/songs-state";
 
 createRoot(document.getElementById("root")!).render(
@@ -27,3 +28,5 @@ createRoot(document.getElementById("root")!).render(
     </AppStateProvider>
   </StrictMode>,
 );
+
+void initOffline();

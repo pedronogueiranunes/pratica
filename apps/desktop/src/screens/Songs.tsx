@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  chartState, chordsUsed, filterSongs, shapesFor, parseChordPro, plainTextToChordPro, transposeDoc, transposeChord,
+  exportChordPro, downloadName, chartState, chordsUsed, filterSongs, shapesFor, parseChordPro, plainTextToChordPro, transposeDoc, transposeChord,
   type ChartRevision, type DataOrigin, type Song,
 } from "@gx/core";
 import { useSongs, type ImportDraft } from "../lib/songs-state";
+import { MusicTransfer } from "../components/MusicTransfer";
+import { downloadText } from "../lib/download";
+import { PlaylistsPanel } from "../components/PlaylistsPanel";
 import { ChordChart } from "../components/ChordChart";
 import { ChordCard } from "../components/ChordDiagram";
 import { useNav } from "../lib/nav";
@@ -27,6 +30,7 @@ const emptySong = (): Song => ({ id: crypto.randomUUID(), title: "", links: [], 
 
 export function Songs() {
   const s = useSongs();
+  const [mode, setMode] = useState<"songs" | "playlists">(() => s.playlistDraft ? "playlists" : "songs");
   const [query, setQuery] = useState("");
   const [phase, setPhase] = useState<number | "all">("all");
   const [chartOnly, setChartOnly] = useState(false);
@@ -36,7 +40,7 @@ export function Songs() {
   const editing = s.songDraft !== null;
   const importing = s.importDraft !== null && (s.importDraft.songId === selected?.id);
 
-  const startNew = () => s.setSongDraft({ song: emptySong(), isNew: true });
+  const startNew = () => { setMode("songs"); s.setSongDraft({ song: emptySong(), isNew: true }); };
   return <div className="screen songs-screen">
     <header className="screen-head">
       <h1>Músicas</h1>
@@ -44,7 +48,12 @@ export function Songs() {
       <div className="actions"><button className="btn" onClick={startNew}>Nova música</button></div>
     </header>
     {s.error && <p className="error-text" role="alert">{s.error}</p>}
-    <div className="songs-layout" data-focus={editing || selected ? "detail" : "list"}>
+    <MusicTransfer />
+    <div className="seg songs-mode" role="group" aria-label="Repertório">
+      <button aria-pressed={mode === "songs"} onClick={() => setMode("songs")}>Músicas</button>
+      <button aria-pressed={mode === "playlists"} onClick={() => setMode("playlists")}>Playlists{s.playlistDraft ? " · editando" : ""}</button>
+    </div>
+    {mode === "playlists" ? <PlaylistsPanel openSong={(id) => { s.select(id); setMode("songs"); }} /> : <div className="songs-layout" data-focus={editing || selected ? "detail" : "list"}>
       <section className="panel songs-list" aria-label="Lista de músicas">
         <div className="songs-filters">
           <input type="search" placeholder="Buscar por música, artista ou estilo" aria-label="Buscar música" value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -78,7 +87,7 @@ export function Songs() {
           : importing ? <ChartImporter song={selected} />
           : <SongView song={selected} />}
       </section>
-    </div>
+    </div>}
   </div>;
 }
 
@@ -100,15 +109,14 @@ function SongView({ song }: { song: Song }) {
   }, [song.chartId, s.version]);
   const state = useMemo(() => chartState(revisions), [revisions]);
   const doc = useMemo(() => state.current ? transposeDoc(parseChordPro(state.current.chordpro), shift) : null, [state.current, shift]);
-  const other = comparing && state.conflicts[0] ? parseChordPro(state.conflicts[0].chordpro) : null;
   const key = song.key ? (shift ? `${song.key.value} → ${transposeChord(song.key.value, shift)}` : song.key.value) : null;
 
-  const openImport = (kind: ImportDraft["kind"], text = "") => s.setImportDraft({ songId: song.id, text, sourceUrl: song.links.find((l) => l.kind === "origem")?.url ?? "", kind });
+  const openImport = (kind: ImportDraft["kind"], text = "") => s.setImportDraft({ songId: song.id, chartId: song.chartId, parentRevision: state.current?.revision, text, sourceUrl: song.links.find((l) => l.kind === "origem")?.url ?? "", kind });
   const resolve = async (keep: ChartRevision) => {
     if (!state.current || !song.chartId) return;
     setBusy(true); setError(null);
     try {
-      await s.reviseChart({ chartId: song.chartId, songId: song.id, chordpro: keep.chordpro, importedFrom: "manual", parentRevision: state.current.revision, supersedes: state.conflicts.map((r) => r.revision) });
+      await s.reviseChart({ chartId: song.chartId, songId: song.id, chordpro: keep.chordpro, importedFrom: "manual", parentRevision: state.current.revision, supersedes: state.conflicts.map((r) => r.revision), sourceUrl: keep.sourceUrl });
       setComparing(false);
     } catch (e) { setError(`Não deu para salvar a escolha. ${String(e)}`); } finally { setBusy(false); }
   };
@@ -151,6 +159,7 @@ function SongView({ song }: { song: Song }) {
           <button aria-pressed={shift === 0} onClick={() => setShift(0)} className="num">{shift > 0 ? `+${shift}` : shift}</button>
           <button aria-label="Meio tom acima" onClick={() => setShift((v) => Math.min(11, v + 1))}>+</button>
         </div>
+        <button className="btn" onClick={() => downloadText(downloadName(song.title, "chordpro"), exportChordPro(state.current!), "text/plain;charset=utf-8")}>Exportar ChordPro</button>
         <button className="btn" onClick={() => openImport("manual", state.current!.chordpro)}>Editar cifra</button>
         <button className="btn ghost" onClick={() => openImport("colado")}>Substituir</button>
       </div>}
@@ -159,9 +168,9 @@ function SongView({ song }: { song: Song }) {
       <span>Esta cifra foi editada em dois lugares. Escolha qual versão fica.</span><span className="spacer" />
       <button className="btn" onClick={() => setComparing((v) => !v)}>{comparing ? "Fechar comparação" : "Comparar"}</button>
     </div>}
-    {comparing && other && state.current && <div className="chart-compare">
+    {comparing && state.conflicts.length > 0 && state.current && <div className="chart-compare">
       <div><div className="chart-compare-head"><span>Esta versão</span><button className="btn" disabled={busy} onClick={() => resolve(state.current!)}>Ficar com esta</button></div><ChordChart doc={parseChordPro(state.current.chordpro)} label="Versão atual" /></div>
-      <div><div className="chart-compare-head"><span>Outra versão</span><button className="btn" disabled={busy} onClick={() => resolve(state.conflicts[0]!)}>Ficar com esta</button></div><ChordChart doc={other} label="Outra versão" /></div>
+      {state.conflicts.map((revision, i) => <div key={revision.revision}><div className="chart-compare-head"><span>Outra versão {i + 1} · {new Date(revision.createdAt).toLocaleString("pt-BR")}</span><button className="btn" aria-label={`Ficar com a outra versão ${i + 1}`} disabled={busy} onClick={() => resolve(revision)}>Ficar com esta</button></div><ChordChart doc={parseChordPro(revision.chordpro)} label={`Outra versão ${i + 1}`} /></div>)}
     </div>}
     {!comparing && (doc ? <>
       <ChordStrip chords={chordsUsed(doc)} />
@@ -220,8 +229,7 @@ function ChartImporter({ song }: { song: Song }) {
     if (!result) return;
     setSaving(true); setError(null);
     try {
-      const head = song.chartId ? chartState(await s.chartRevisions(song.chartId)).current : null;
-      const rev = await s.reviseChart({ chartId: song.chartId, songId: song.id, chordpro: result.chordpro, importedFrom: draft.kind, sourceUrl: draft.sourceUrl || undefined, parentRevision: head?.revision });
+      const rev = await s.reviseChart({ chartId: draft.chartId, songId: song.id, chordpro: result.chordpro, importedFrom: draft.kind, sourceUrl: draft.sourceUrl || undefined, parentRevision: draft.parentRevision });
       const origin: DataOrigin = draft.fileName ? { kind: "arquivo", name: draft.fileName } : { kind: "cifra" };
       const next: Song = { ...song, chartId: rev.chartId };
       if (useMeta && fills.key) next.key = { value: fills.key, origin };

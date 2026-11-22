@@ -1,7 +1,7 @@
 import { defaultSettings, type PracticeRecord, type Settings } from "./types";
 import { validInputProfiles } from "./tuner";
 import { validateChartRevision, validatePlaylist, validateSong } from "./songs";
-import type { PracticeEvent, SavedRoutine, SettingChange, SettingsPatch } from "./store";
+import type { PracticeEvent, StoredEvent, SavedRoutine, SettingChange, SettingsPatch } from "./store";
 
 const obj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 const text = (v: unknown): v is string => typeof v === "string" && v.length > 0;
@@ -62,6 +62,15 @@ export function validateSetting(v: unknown): asserts v is SettingChange {
     : key === "tuner.inputProfiles" ? v.key.startsWith("device:") && validInputProfiles(x)
     : ["metronome.outputDeviceId", "tuner.inputDeviceId"].includes(key) ? x === null || typeof x === "string" : false;
   if (!valid) throw new Error("Ajuste inválido.");
+}
+export const KNOWN_EVENT_TYPES = ["practice.added", "settings.changed", "routine.saved", "song.saved", "playlist.saved", "chart.revised"] as const;
+export function isKnownEvent(e: StoredEvent): e is PracticeEvent {
+  return (KNOWN_EVENT_TYPES as readonly string[]).includes(e.type);
+}
+/** Tipos futuros são preservados; envelopes incompatíveis e dados conhecidos inválidos não são. */
+export function validateStoredEvent(v: unknown): asserts v is StoredEvent {
+  if (!obj(v) || v.version !== 1 || !text(v.id) || !text(v.deviceId) || !validDate(v.at) || !text(v.type) || !("data" in v)) throw new Error("Evento inválido ou versão incompatível.");
+  if (isKnownEvent(v as unknown as StoredEvent)) validateEvent(v);
 }
 export function validateEvent(v: unknown): asserts v is PracticeEvent {
   if (!obj(v) || v.version !== 1 || !text(v.id) || !text(v.deviceId) || !validDate(v.at)) throw new Error("Evento inválido ou versão incompatível.");

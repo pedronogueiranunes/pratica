@@ -1,14 +1,21 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { seedSongs, type ChartDraft, type ChartRevision, type Playlist, type RepertoireSeed, type Song, type SongStore } from "@gx/core";
+import { createContext, useCallback, useContext, useEffect, useState, useRef, type ReactNode } from "react";
+import { seedSongs, type ChartDraft, type ChartRevision, type Playlist, type RepertoireSeed, type Song, type SongStore, type MusicPackage, type MusicTransferStore } from "@gx/core";
 import seed from "../../../../data/repertoire.seed.json";
 import { usePractice } from "./practice-state";
 
 export interface SongDraft { song: Song; isNew: boolean }
-export interface ImportDraft { songId: string; text: string; sourceUrl: string; fileName?: string; kind: "colado" | "chordpro" | "txt" | "manual" }
+export interface ImportDraft { songId: string; text: string; sourceUrl: string; fileName?: string; chartId?: string; parentRevision?: string; kind: "colado" | "chordpro" | "txt" | "manual" }
 
 interface SongsState {
+  exportMusic: () => Promise<MusicPackage>;
+  importMusic: (pack: MusicPackage) => Promise<void>;
   songs: Song[];
   playlists: Playlist[];
+  playlistDraft: Playlist | null;
+  setPlaylistDraft: (draft: Playlist | null) => void;
+  playlistBusy: boolean;
+  playlistError: string | null;
+  writePlaylist: (playlist: Playlist) => Promise<void>;
   ready: boolean;
   error: string | null;
   selectedId: string | null;
@@ -29,8 +36,12 @@ const Context = createContext<SongsState | null>(null);
 
 export function SongsProvider({ children }: { children: ReactNode }) {
   const { store, ready: practiceReady } = usePractice();
-  const songStore = store as unknown as SongStore | null;
+  const songStore = store as unknown as (SongStore & MusicTransferStore) | null;
   const [songs, setSongs] = useState<Song[]>([]);
+  const [playlistDraft, setPlaylistDraft] = useState<Playlist | null>(null);
+  const [playlistBusy, setPlaylistBusy] = useState(false);
+  const [playlistError, setPlaylistError] = useState<string | null>(null);
+  const playlistLock = useRef(false);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,7 +75,17 @@ export function SongsProvider({ children }: { children: ReactNode }) {
   const written = useCallback(async () => { await refresh(); window.dispatchEvent(new Event("practice-written")); }, [refresh]);
   const need = () => { if (!songStore) throw new Error("Os dados ainda estão carregando."); return songStore; };
   const value: SongsState = {
+    exportMusic: () => need().exportMusic(),
+    importMusic: async (pack) => { await need().importMusic(pack); await written(); },
     songs, playlists, ready, error, version, selectedId,
+    playlistDraft, setPlaylistDraft, playlistBusy, playlistError,
+    writePlaylist: async (playlist) => {
+      if (playlistLock.current) return;
+      playlistLock.current = true; setPlaylistBusy(true); setPlaylistError(null);
+      try { await need().savePlaylist(playlist); await written(); setPlaylistDraft(null); }
+      catch (error) { setPlaylistError(`Não deu para salvar a playlist. Tente de novo. ${String(error)}`); }
+      finally { playlistLock.current = false; setPlaylistBusy(false); }
+    },
     select: (id) => { setSelectedId(id); try { if (id) localStorage.setItem("pratica.song", id); else localStorage.removeItem("pratica.song"); } catch {} },
     songDraft, setSongDraft, importDraft, setImportDraft,
     saveSong: async (song) => { await need().saveSong(song); await written(); },

@@ -46,3 +46,13 @@ describe("calendário", () => {
     expect(new Date(march.to).getMonth()).toBe(3);
   });
 });
+
+it("preserva envelopes futuros sem aceitar dados conhecidos inválidos", async () => {
+  const { validateStoredEvent, validateEvent } = await import("../src/events");
+  const event = { version: 1, id: "future", deviceId: "b", at: "2026-11-22T12:00:00Z", type: "future.saved", data: { x: 1 } };
+  expect(() => validateStoredEvent(event)).not.toThrow();
+  expect(() => validateEvent(event)).toThrow();
+  expect(() => validateStoredEvent({ ...event, version: 2 })).toThrow();
+  expect(() => validateStoredEvent({ ...event, type: "song.saved" })).toThrow();
+  expect(() => validateStoredEvent({ ...event, type: "" })).toThrow();
+});

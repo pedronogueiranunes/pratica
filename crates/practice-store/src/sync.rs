@@ -93,11 +93,16 @@ pub fn sync_folder(store: &mut Store, folder: &Path, device: &str) -> StoreResul
     // Snapshot do log imutável: cada evento mantém ID e conteúdo. Renomear só
     // depois de fsync evita publicar uma linha cortada após queda de energia.
     let events = store.request("events", &json!({}))?;
+    let relayed: std::collections::HashSet<String> = {
+        let mut stmt = store.connection.prepare("SELECT key FROM local_meta WHERE key LIKE 'musicRelay:%'").map_err(|e| e.to_string())?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(0)).map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?.into_iter().filter_map(|key| key.strip_prefix("musicRelay:").map(str::to_string)).collect()
+    };
     let own: Vec<&Value> = events
         .as_array()
         .unwrap()
         .iter()
-        .filter(|e| e["deviceId"] == device)
+        .filter(|e| e["deviceId"] == device || e["id"].as_str().is_some_and(|id| relayed.contains(id)))
         .collect();
     let path = folder.join(format!("{device}.jsonl"));
     let mut content = Vec::new();
@@ -141,6 +146,32 @@ mod tests {
     fn event(id: &str, device: &str) -> Value {
         json!({"version":1,"id":id,"deviceId":device,"at":"2026-11-20T12:00:00Z","type":"practice.added","data":{"id":id,"exerciseId":"f1-spider","at":"2026-11-20T12:00:00Z","bpm":60}})
     }
+    #[test]
+    fn pacote_web_chega_ao_outro_mac_sem_mudar_a_autoria() {
+        let root = std::env::temp_dir().join(format!("pratica-relay-{}", std::process::id()));
+        let cloud = root.join("cloud");
+        let db = root.join("a.sqlite3");
+        fs::create_dir_all(&root).unwrap();
+        let incoming = json!({"version":1,"id":"web-song","deviceId":"browser","at":"2026-11-22T12:00:00Z","type":"song.saved","data":{"id":"song","title":"Texto neutro","links":[],"tracks":[],"tags":[]}});
+        {
+            let mut a = Store::open(&db).unwrap();
+            a.request("apply", &json!({"events":[incoming.clone()],"relayMusic":true})).unwrap();
+            assert!(a.request("apply", &json!({"events":[event("not-music","browser")],"relayMusic":true})).is_err());
+        }
+        let mut a = Store::open(&db).unwrap();
+        sync_folder(&mut a, &cloud, "a").unwrap();
+        assert!(!cloud.join("browser.jsonl").exists());
+        let published = fs::read_to_string(cloud.join("a.jsonl")).unwrap();
+        assert_eq!(serde_json::from_str::<Value>(published.trim()).unwrap(), incoming);
+        let mut b = Store::open(":memory:").unwrap();
+        assert_eq!(sync_folder(&mut b, &cloud, "b").unwrap().imported, 1);
+        assert_eq!(b.request("listSongs", &json!({})).unwrap()[0]["title"], "Texto neutro");
+        assert_eq!(sync_folder(&mut a, &cloud, "a").unwrap().imported, 0);
+        assert_eq!(fs::read_to_string(cloud.join("a.jsonl")).unwrap(), published);
+        drop(a); drop(b);
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn evento_de_tipo_futuro_nao_trava_a_sincronizacao() {
         let folder = std::env::temp_dir().join(format!("pratica-sync-futuro-{}", std::process::id()));

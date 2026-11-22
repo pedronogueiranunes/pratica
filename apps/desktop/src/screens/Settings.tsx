@@ -4,6 +4,8 @@ import { suggestion, useDevices } from "../lib/devices";
 import { usePractice } from "../lib/practice-state";
 import { engine, isNative } from "../lib/engine";
 
+import { OfflineStatus } from "../components/OfflineStatus";
+
 const THEMES: Theme[] = ["sistema", "claro", "escuro"];
 
 export function Settings() {
@@ -162,12 +164,13 @@ export function Settings() {
         <section className="panel">
           <h2>Seus dados</h2>
           <p className="muted" role="status">{sync?.message ?? "Abrindo os dados locais…"}</p>
+          <OfflineStatus />
         </section>
 
         <section className="panel">
           <h2>Conexões</h2>
           <p className="muted" style={{ margin: 0 }}>
-            Login com Spotify, YouTube, Jamendo e outros chega na Fase 3. Por enquanto, o teste do Spotify e do YouTube está no Laboratório.
+            Login e importação de playlists do Spotify e YouTube ficam para a Fase 4. Por enquanto, o teste do Spotify e do YouTube está no Laboratório.
           </p>
         </section>
       </div>

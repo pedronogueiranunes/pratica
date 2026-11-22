@@ -16,7 +16,15 @@ export interface PracticeStore {
 }
 
 /** A origem identifica quem escreveu. O horário da prática pode ser anterior ao evento. */
-export interface PracticeEvent {
+export interface StoredEvent {
+  version: 1;
+  id: string;
+  deviceId: string;
+  at: string;
+  type: string;
+  data: unknown;
+}
+export interface PracticeEvent extends StoredEvent {
   version: 1;
   id: string;
   deviceId: string;
@@ -38,6 +46,10 @@ export interface ChartDraft {
   sourceUrl?: string;
   parentRevision?: string;
   supersedes?: string[];
+}
+export interface MusicTransferStore {
+  exportMusic(): Promise<import("./music-transfer").MusicPackage>;
+  importMusic(pack: import("./music-transfer").MusicPackage): Promise<void>;
 }
 export interface SongStore {
   listSongs(): Promise<Song[]>;

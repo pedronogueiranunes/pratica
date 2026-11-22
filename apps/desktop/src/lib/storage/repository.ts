@@ -1,10 +1,10 @@
 import { validateChartRevision, validatePlaylist, validateSong, type ChartDraft, type ChartRevision, type Playlist, type Song, type SongStore,
-  flattenSettings, settingsFromRows, validateEvent, validateLog, validateRoutine, validDate,
-  type LogRange, type PracticeEvent, type PracticeRecord, type PracticeStore, type SavedRoutine,
+  createMusicPackage, validateMusicPackage, type MusicPackage, type MusicTransferStore, flattenSettings, settingsFromRows, validateStoredEvent, validateLog, validateRoutine, validDate,
+  type LogRange, type StoredEvent, type PracticeEvent, type PracticeRecord, type PracticeStore, type SavedRoutine,
   type SettingChange, type SettingsPatch, type StoreBackend } from "@gx/core";
 
 /** Mesmo contrato no Tauri e no IndexedDB. Sem dependência de React. */
-export class PracticeRepository implements PracticeStore, SongStore {
+export class PracticeRepository implements PracticeStore, SongStore, MusicTransferStore {
   constructor(readonly backend: StoreBackend, readonly deviceId: string) {}
   private async event(type: PracticeEvent["type"], data: unknown): Promise<PracticeEvent> {
     const time = await this.backend.request("nextTimestamp") as number;
@@ -55,9 +55,11 @@ export class PracticeRepository implements PracticeStore, SongStore {
     await this.mergeEvents([{ ...event, data: revision }]);
     return revision;
   }
-  async mergeEvents(events: PracticeEvent[]) {
-    events.forEach(validateEvent);
+  async exportMusic() { return createMusicPackage(await this.events(), new Date().toISOString()); }
+  async importMusic(pack: MusicPackage) { await this.backend.request("apply", { events: validateMusicPackage(pack).events, relayMusic: true }); }
+  async mergeEvents(events: StoredEvent[]) {
+    events.forEach(validateStoredEvent);
     await this.backend.request("apply", { events });
   }
-  async events() { return this.backend.request("events") as Promise<PracticeEvent[]>; }
+  async events() { return this.backend.request("events") as Promise<StoredEvent[]>; }
 }

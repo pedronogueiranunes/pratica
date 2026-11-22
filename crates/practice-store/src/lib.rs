@@ -109,10 +109,19 @@ impl Store {
             }
             "apply" => {
                 let events = args["events"].as_array().ok_or("Eventos inválidos")?;
-                for e in events { validate_event(e)?; }
+                for e in events {
+                    validate_event(e)?;
+                    if args["relayMusic"] == true && !["song.", "playlist.", "chart."].iter().any(|prefix| string(e, "type").is_ok_and(|t| t.starts_with(prefix))) {
+                        return Err("O pacote só pode conter eventos de repertório.".into());
+                    }
+                }
                 let tx = self.connection.transaction().map_err(err)?;
                 for e in events {
                     let id = string(e,"id")?;
+                    if args["relayMusic"] == true {
+                        // Metadado local de transporte. Autoria e envelope original permanecem intactos.
+                        tx.execute("INSERT OR IGNORE INTO local_meta VALUES (?1,'true')", [format!("musicRelay:{id}")]).map_err(err)?;
+                    }
                     let previous: Option<String> = tx.query_row("SELECT value_json FROM events WHERE id=?1",[id],|r|r.get(0)).optional().map_err(err)?;
                     if let Some(previous) = previous {
                         if parse(previous)? != *e { return Err("ID de evento em conflito.".into()); }
@@ -283,6 +292,7 @@ fn validate_song(s: &Value) -> StoreResult<()> {
 }
 
 pub fn validate_event(e: &Value) -> StoreResult<()> {
+    if e.get("data").is_none() { return Err("Dados do evento ausentes.".into()); }
     if e["version"] != 1 {
         return Err("Versão de evento incompatível.".into());
     }
