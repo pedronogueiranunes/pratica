@@ -84,6 +84,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     if (settings.theme === "sistema") root.removeAttribute("data-theme");
     else root.setAttribute("data-theme", settings.theme);
     root.lang = settings.locale;
+    // A barra lateral usa o material nativo do macOS, que segue a aparência da
+    // janela e não o CSS. Sem isso, tema claro com sistema escuro deixa o
+    // fundo da barra escuro e o texto escuro.
+    if ("__TAURI_INTERNALS__" in window) {
+      void import("@tauri-apps/api/window").then(({ getCurrentWindow }) =>
+        getCurrentWindow().setTheme(settings.theme === "sistema" ? null : settings.theme === "claro" ? "light" : "dark"),
+      ).catch(() => {});
+    }
   }, [settings.theme, settings.locale]);
 
   const t = useMemo(() => createTranslator(settings.locale), [settings.locale]);
