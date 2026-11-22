@@ -1,6 +1,6 @@
 import pasted from "./fixtures/cifra-colada-cifraclub.txt?raw";
 import { describe, expect, it } from "vitest";
-import { chordsUsed, isChord, isChordLine, mergeChordsIntoLyrics, parseChord, parseChordPro, plainTextToChordPro, serializeChordPro, transposeChord, transposeDoc } from "../src";
+import { chordsUsed, keyUsesFlats, isChord, isChordLine, mergeChordsIntoLyrics, parseChord, parseChordPro, plainTextToChordPro, serializeChordPro, transposeChord, transposeDoc } from "../src";
 
 // Estrutura de uma cifra colada do Cifra Club pelo Pedro, com a letra trocada por texto neutro.
 
@@ -69,6 +69,15 @@ describe("ChordPro", () => {
   });
   it("ignora tempo inválido em vez de chutar", () => {
     expect(parseChordPro("{tempo: rápido}\n").meta.tempo).toBeUndefined();
+  });
+  it("grafa a transposição pelo tom de destino", () => {
+    const doc = parseChordPro("[Em7(9)]a [D]b [C7M]c [B7]d\n");
+    expect(chordsUsed(transposeDoc(doc, 1))).toEqual(["Fm7(9)", "Eb", "Db7M", "C7"]);
+    expect(chordsUsed(transposeDoc(doc, 2))).toEqual(["F#m7(9)", "E", "D7M", "C#7"]);
+    expect(keyUsesFlats("F")).toBe(true);
+    expect(keyUsesFlats("Dm")).toBe(true);
+    expect(keyUsesFlats("Em")).toBe(false);
+    expect(keyUsesFlats("A")).toBe(false);
   });
   it("transpõe só para exibir", () => {
     const doc = parseChordPro(src);

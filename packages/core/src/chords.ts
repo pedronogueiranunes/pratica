@@ -46,3 +46,14 @@ export function transposeChord(token: string, semitones: number, flats?: boolean
   const root = transposeNote(c.root, semitones, useFlats);
   return c.bass ? `${root}${c.suffix}/${transposeNote(c.bass, semitones, useFlats)}` : `${root}${c.suffix}`;
 }
+
+const FLAT_MAJOR = new Set(["F", "Bb", "Eb", "Ab", "Db", "Gb", "Cb"]);
+const FLAT_MINOR = new Set(["D", "G", "C", "F", "Bb", "Eb", "Ab"]);
+/** A armadura do tom usa bemóis? Decide a grafia na transposição (Eb em vez de D#). */
+export function keyUsesFlats(key: string): boolean {
+  const c = parseChord(key);
+  if (!c) return false;
+  const minor = /^m(?!aj)/.test(c.suffix);
+  const root = c.root === "D#" && !minor ? "Eb" : c.root === "A#" ? "Bb" : c.root === "G#" && !minor ? "Ab" : c.root === "C#" && !minor ? "Db" : c.root;
+  return minor ? FLAT_MINOR.has(root) || root.endsWith("b") : FLAT_MAJOR.has(root);
+}

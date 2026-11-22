@@ -1,5 +1,5 @@
 // Leitura e escrita de ChordPro (subconjunto usado pelo app).
-import { transposeChord } from "./chords";
+import { keyUsesFlats, transposeChord } from "./chords";
 
 export type ChordProLine =
   | { type: "lyrics"; segments: { chord?: string; text: string }[] }
@@ -69,8 +69,15 @@ export function chordsUsed(doc: ChordProDoc): string[] {
 /** Transposição só de exibição: não altera a cifra salva. */
 export function transposeDoc(doc: ChordProDoc, semitones: number, flats?: boolean): ChordProDoc {
   if (!semitones) return doc;
+  if (flats === undefined) {
+    // Sem escolha explícita, a grafia segue o tom de destino: o da cifra ou o primeiro acorde.
+    const reference = doc.meta.key ?? chordsUsed(doc)[0];
+    flats = reference ? keyUsesFlats(transposeChord(reference, semitones, false)) : false;
+  }
+  const meta = { ...doc.meta };
+  if (meta.key) meta.key = transposeChord(meta.key, semitones, flats);
   return {
-    meta: { ...doc.meta, key: doc.meta.key ? transposeChord(doc.meta.key, semitones, flats) : undefined },
+    meta,
     lines: doc.lines.map((l) => (l.type === "lyrics" ? { ...l, segments: l.segments.map((s) => (s.chord ? { ...s, chord: transposeChord(s.chord, semitones, flats) } : s)) } : l)),
   };
 }
