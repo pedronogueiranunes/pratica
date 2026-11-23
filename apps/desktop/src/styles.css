@@ -2322,6 +2322,24 @@ button.chord-tile[aria-pressed="true"] {
 .transfer-preview { margin-top: 16px; max-width: 70ch; overflow-wrap: anywhere; }
 
 /* Celular: alvos de toque de 44 px e barra de abas quase opaca */
+.chord-options { display: flex; flex-wrap: wrap; gap: 16px; margin: 20px 0 24px; }
+.chord-options label { display: flex; flex-direction: column; gap: 6px; flex: 1 1 160px; max-width: 280px; color: var(--fg-2); font-size: 14px; }
+.chord-options select { width: 100%; min-height: 44px; color: var(--fg); }
+.sequence-list { list-style: none; padding: 0; margin: 24px 0; }
+.sequence-row { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.sequence-row.current { background: var(--bg-raised); }
+.sequence-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; flex: 1 1 180px; }
+.sequence-name strong { font-size: 24px; }
+.sequence-row.current strong { color: var(--accent); }
+.sequence-row label, .sequence-controls > label:not(.chord-preview-toggle):not(.chord-preview-volume) { display: flex; align-items: center; gap: 8px; }
+.sequence-row select { min-width: 65px; min-height: 44px; }
+.sequence-actions, .sequence-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.sequence-actions .btn { min-height: 44px; }
+.sequence-controls { gap: 16px; margin-top: 24px; }
+.sequence-controls input[type="number"] { width: 80px; min-height: 44px; }
+.sequence-position { margin: 16px 0 0; }
+.sequence-empty { margin: 32px 0; max-width: 60ch; }
+.sequence-panel .btn.primary { color: #161616; }
 @media (max-width: 720px) {
   .seg button { height: 40px; min-width: 36px; }
   .btn,
