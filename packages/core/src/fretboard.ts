@@ -38,6 +38,10 @@ export interface ExerciseVisual {
 
 const STRINGS: StringNo[] = [6, 5, 4, 3, 2, 1];
 const OPEN_MIDI: Record<StringNo, number> = { 6: 40, 5: 45, 4: 50, 3: 55, 2: 59, 1: 64 };
+/** Altura que soa na afinação padrão, sem aplicar a oitava de escrita da guitarra. */
+export function fretMidi(string: StringNo, fret: number): number | null {
+  return OPEN_MIDI[string] !== undefined && Number.isInteger(fret) && fret >= 0 && fret <= 24 ? OPEN_MIDI[string] + fret : null;
+}
 const NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
 export function noteName(string: StringNo, fret: number): string {

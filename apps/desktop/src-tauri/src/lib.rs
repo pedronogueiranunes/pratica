@@ -37,6 +37,14 @@ fn metronome_stop(audio: State<Audio>) {
 }
 
 #[tauri::command]
+fn chord_preview(audio: State<Audio>, device_id: Option<String>, frequencies: Vec<f32>, volume: f32) -> Result<(), String> {
+    if audio_engine::preview::PreviewPlan::new(&frequencies, volume).is_none() { return Err("Prévia inválida.".into()); }
+    audio.0.preview_chord(device_id, frequencies, volume); Ok(())
+}
+#[tauri::command]
+fn chord_preview_stop(audio: State<Audio>) { audio.0.stop_preview(); }
+
+#[tauri::command]
 fn tuner_start(audio: State<Audio>, device_id: Option<String>, channel: u16, a4: f32, buffer_frames: Option<u32>) {
     audio.0.start_tuner_with_buffer(device_id, channel, a4, buffer_frames);
 }
@@ -89,6 +97,8 @@ pub fn run() {
             metronome_start,
             metronome_update,
             metronome_stop,
+            chord_preview,
+            chord_preview_stop,
             tuner_start,
             tuner_set_a4,
             tuner_stop,

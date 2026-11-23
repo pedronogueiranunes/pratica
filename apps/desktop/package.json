@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.json && vite build",
     "build:web": "tsc -p tsconfig.json && VITE_BASE=/pratica/ vite build",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node test/tuner-engine.mjs && node test/service-worker.mjs && node test/run-contracts.mjs",
+    "test": "node test/tuner-engine.mjs && node test/chord-preview.mjs && node test/service-worker.mjs && node test/run-contracts.mjs",
     "tauri": "tauri",
     "test:web": "node test/run-contracts.mjs --web",
     "test:native": "node test/run-contracts.mjs --native",

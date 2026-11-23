@@ -9,6 +9,7 @@ class Context {
   sampleRate = 48000;
   destination = {};
   createGain() { return node(); }
+  createWaveShaper() { return node(); }
   resume() { return blockResume ? new Promise((r) => { releaseResume = r; }) : Promise.resolve(); }
   createMediaStreamSource() { return node(); }
   createChannelSplitter(channels) { assert.equal(channels, 1); return node(); }

@@ -5,6 +5,7 @@
 //! ring buffers sem lock (rtrb).
 
 use crate::click::ClickBank;
+use crate::preview::{ChordPreview, PreviewPlan};
 use crate::latency::{Connection, DeviceInfo};
 use crate::metronome::{Metronome, MetronomeSettings, Tick};
 use crate::pitch::{note_from_frequency, rms, NoteReading, PitchDetector};
@@ -66,6 +67,8 @@ pub enum ErrorCode {
 }
 
 enum Command {
+    Preview { device_id: Option<String>, frequencies: Vec<f32>, volume: f32 },
+    StopPreview,
     StartMetronome { device_id: Option<String>, settings: MetronomeSettings },
     UpdateMetronome(MetronomeSettings),
     StopMetronome,
@@ -78,6 +81,10 @@ enum Command {
 }
 
 enum AudioCmd {
+    Start,
+    Stop,
+    Preview(PreviewPlan),
+    StopPreview,
     Settings(MetronomeSettings),
     Bank(Box<ClickBank>),
 }
@@ -104,6 +111,10 @@ impl Drop for ThreadGuard {
 }
 
 impl EngineHandle {
+    pub fn preview_chord(&self, device_id: Option<String>, frequencies: Vec<f32>, volume: f32) {
+        let _ = self.tx.send(Command::Preview { device_id, frequencies, volume });
+    }
+    pub fn stop_preview(&self) { let _ = self.tx.send(Command::StopPreview); }
     /// Abre cada entrada e saída por um instante para medir o atraso real.
     /// Recusa enquanto o metrônomo ou o afinador estiverem ligados.
     pub fn measure_latency(&self) {
@@ -222,6 +233,8 @@ fn find_device(input: bool, id: Option<&str>) -> Option<cpal::Device> {
 }
 
 struct MetronomeStream {
+    running: bool,
+    preview_until: Option<Instant>,
     _stream: cpal::Stream,
     device_id: String,
     cmd: rtrb::Producer<AudioCmd>,
@@ -288,9 +301,38 @@ impl EngineThread {
 
     fn handle(&mut self, cmd: Command) {
         match cmd {
+            Command::Preview { device_id, frequencies, volume } => {
+                let Some(plan) = PreviewPlan::new(&frequencies, volume) else {
+                    self.error(ErrorCode::StreamFailed, "Prévia de acorde inválida."); return;
+                };
+                if self.metronome.as_ref().is_some_and(|m| !m.running && device_id.as_ref().is_some_and(|id| *id != m.device_id)) { self.metronome = None; }
+                if self.metronome.is_none() {
+                    match self.open_metronome(device_id.as_deref(), MetronomeSettings::default(), false) {
+                        Ok(m) => self.metronome = Some(m),
+                        Err((code, message)) => { self.error(code, message); return; }
+                    }
+                }
+                if let Some(m) = self.metronome.as_mut() {
+                    m.preview_until = Some(Instant::now() + Duration::from_secs(2));
+                    if m.cmd.push(AudioCmd::Preview(plan)).is_err() {
+                        self.error(ErrorCode::StreamFailed, "Aguarde um instante e toque de novo.");
+                    }
+                }
+            }
+            Command::StopPreview => {
+                if let Some(m) = self.metronome.as_mut() { let _ = m.cmd.push(AudioCmd::StopPreview); }
+            }
             Command::StartMetronome { device_id, settings } => {
+                if self.metronome.as_ref().is_some_and(|m| device_id.as_ref().is_none_or(|id| *id == m.device_id)) {
+                    self.handle(Command::UpdateMetronome(settings));
+                    if let Some(m) = self.metronome.as_mut() {
+                        let _ = m.cmd.push(AudioCmd::Start); m.running = true;
+                        (self.emit)(EngineEvent::MetronomeState { running: true, device_id: Some(m.device_id.clone()) });
+                    }
+                    return;
+                }
                 self.metronome = None;
-                match self.open_metronome(device_id.as_deref(), settings) {
+                match self.open_metronome(device_id.as_deref(), settings, true) {
                     Ok(m) => {
                         (self.emit)(EngineEvent::MetronomeState { running: true, device_id: Some(m.device_id.clone()) });
                         self.metronome = Some(m);
@@ -313,7 +355,11 @@ impl EngineThread {
                 }
             }
             Command::StopMetronome => {
-                self.metronome = None;
+                if let Some(m) = self.metronome.as_mut() {
+                    let _ = m.cmd.push(AudioCmd::Stop); m.running = false;
+                    let tail = Instant::now() + Duration::from_millis(200);
+                    m.preview_until = Some(m.preview_until.map_or(tail, |until| until.max(tail)));
+                }
                 (self.emit)(EngineEvent::MetronomeState { running: false, device_id: None });
             }
             Command::StartTuner { device_id, channel, a4, buffer_frames } => {
@@ -383,7 +429,7 @@ impl EngineThread {
             }
             if d.is_output && d.output_channels > 0 {
                 let silent = MetronomeSettings { volume: 0.0, ..MetronomeSettings::default() };
-                match self.open_metronome(Some(&d.id), silent) {
+                match self.open_metronome(Some(&d.id), silent, false) {
                     Ok(m) => match wait(&m.latency_ms) {
                         Some(ms) => { measured += 1; (self.emit)(EngineEvent::Latency { direction: Direction::Output, device_id: d.id.clone(), ms }); }
                         None => failed.push(d.name.clone()),
@@ -400,6 +446,7 @@ impl EngineThread {
 
     /// Trabalho periódico: repassa cliques, analisa o afinador, vigia dispositivos.
     fn pump(&mut self) {
+        if self.metronome.as_ref().is_some_and(|m| !m.running && m.preview_until.is_some_and(|until| Instant::now() >= until)) { self.metronome = None; }
         if let Some(m) = self.metronome.as_mut() {
             while let Ok((tick, audible_in_ms)) = m.ticks.pop() {
                 (self.emit)(EngineEvent::Tick { tick, audible_in_ms });
@@ -470,8 +517,9 @@ impl EngineThread {
         &self,
         device_id: Option<&str>,
         settings: MetronomeSettings,
+        running: bool,
     ) -> Result<MetronomeStream, (ErrorCode, String)> {
-        let device = find_device(false, device_id).ok_or((ErrorCode::NoDevice, "Nenhuma saída de áudio".into()))?;
+        let device = find_device(false, device_id).filter(|d| device_id.is_none() || d.id().ok().is_some_and(|id| Some(id.to_string().as_str()) == device_id)).ok_or((ErrorCode::NoDevice, "Nenhuma saída de áudio".into()))?;
         let id = device.id().map(|i| i.to_string()).unwrap_or_default();
         let supported = device
             .default_output_config()
@@ -479,6 +527,7 @@ impl EngineThread {
         let format = supported.sample_format();
         let config: cpal::StreamConfig = supported.config();
         let sample_rate = config.sample_rate;
+        if config.channels == 0 || config.channels > 128 { return Err((ErrorCode::UnsupportedFormat, "Saída com número de canais não suportado.".into())); }
 
         let (cmd_tx, cmd_rx) = rtrb::RingBuffer::<AudioCmd>::new(64);
         let (tick_tx, tick_rx) = rtrb::RingBuffer::<(Tick, f32)>::new(256);
@@ -486,8 +535,10 @@ impl EngineThread {
         let latency = Arc::new(AtomicU32::new(0));
 
         let mut metro = Metronome::new(sample_rate, settings);
-        metro.start();
+        if running { metro.start(); }
         let ctx = OutputCtx {
+            preview: ChordPreview::new(sample_rate),
+            pending_bank: None,
             metro,
             cmd: cmd_rx,
             ticks: tick_tx,
@@ -508,6 +559,8 @@ impl EngineThread {
         stream.play().map_err(|e| (ErrorCode::StreamFailed, e.to_string()))?;
 
         Ok(MetronomeStream {
+            running,
+            preview_until: None,
             _stream: stream,
             device_id: id,
             cmd: cmd_tx,
@@ -572,6 +625,8 @@ impl EngineThread {
 }
 
 struct OutputCtx {
+    pending_bank: Option<Box<ClickBank>>,
+    preview: ChordPreview,
     metro: Metronome,
     cmd: rtrb::Consumer<AudioCmd>,
     ticks: rtrb::Producer<(Tick, f32)>,
@@ -594,13 +649,22 @@ where
     device.build_output_stream(
         *config,
         move |data: &mut [T], info: &cpal::OutputCallbackInfo| {
-            while let Ok(cmd) = ctx.cmd.pop() {
+            if ctx.pending_bank.is_some() && ctx.garbage.slots() > 0 {
+                let bank = ctx.pending_bank.take().unwrap();
+                let old = ctx.metro.swap_bank(bank);
+                let _ = ctx.garbage.push(old);
+            }
+            while ctx.pending_bank.is_none() {
+                let Ok(cmd) = ctx.cmd.pop() else { break; };
                 match cmd {
+                    AudioCmd::Start => ctx.metro.start(),
+                    AudioCmd::Stop => ctx.metro.stop(),
+                    AudioCmd::Preview(plan) => ctx.preview.play(plan),
+                    AudioCmd::StopPreview => ctx.preview.stop(),
                     AudioCmd::Settings(s) => ctx.metro.set_settings(s),
                     AudioCmd::Bank(b) => {
+                        if ctx.garbage.slots() == 0 { ctx.pending_bank = Some(b); break; }
                         let old = ctx.metro.swap_bank(b);
-                        // Se a fila de descarte estiver cheia, o banco antigo é
-                        // liberado aqui mesmo (raro, e só quando o som muda).
                         let _ = ctx.garbage.push(old);
                     }
                 }
@@ -613,17 +677,23 @@ where
                 .unwrap_or(0.0);
             ctx.latency.store(base_ms.to_bits(), Ordering::Relaxed);
 
-            if ctx.scratch.len() < data.len() {
-                ctx.scratch.resize(data.len(), 0.0);
-            }
-            let buf = &mut ctx.scratch[..data.len()];
-            let ticks = &mut ctx.ticks;
-            ctx.metro.render(buf, channels, |tick| {
-                let ms = base_ms + tick.offset_in_block as f32 / sample_rate * 1000.0;
-                let _ = ticks.push((tick, ms));
-            });
-            for (o, s) in data.iter_mut().zip(buf.iter()) {
-                *o = T::from_sample(*s);
+            // Blocos limitados à memória preparada. Não cresce a scratch na callback.
+            let chunk_len = (ctx.scratch.len() / channels).max(1) * channels;
+            let mut offset = 0;
+            for chunk in data.chunks_mut(chunk_len) {
+                let buf = &mut ctx.scratch[..chunk.len()];
+                let ticks = &mut ctx.ticks;
+                ctx.metro.render(buf, channels, |mut tick| {
+                    tick.offset_in_block += offset;
+                    let ms = base_ms + tick.offset_in_block as f32 / sample_rate * 1000.0;
+                    let _ = ticks.push((tick, ms));
+                });
+                for frame in buf.chunks_exact_mut(channels) {
+                    let preview = ctx.preview.sample();
+                    for sample in frame { *sample = (*sample + preview).clamp(-0.98, 0.98); }
+                }
+                for (o, sample) in chunk.iter_mut().zip(buf.iter()) { *o = T::from_sample(*sample); }
+                offset += chunk.len() / channels;
             }
         },
         move |err| {

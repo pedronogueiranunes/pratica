@@ -128,7 +128,7 @@ export function Settings() {
 
           {measuring && <p className="muted small" role="status">Abrindo cada entrada e saída por um instante, em silêncio. Leva alguns segundos.</p>}
           {measureResult && !measuring && <p className={`small ${measureResult.busy ? "error-text" : "muted"}`} role="status">
-            {measureResult.busy ? "Pare o metrônomo e o afinador para medir." : measureResult.measured ? `${measureResult.measured} medições feitas agora.` : "Nenhum dispositivo respondeu."}
+            {measureResult.busy ? "Pare o metrônomo, o afinador e a prévia de acordes. Aguarde dois segundos e tente medir." : measureResult.measured ? `${measureResult.measured} medições feitas agora.` : "Nenhum dispositivo respondeu."}
             {measureResult.failed.length > 0 && ` Sem resposta: ${measureResult.failed.join(", ")}.`}
           </p>}
           <h3 className="phase-title" style={{ marginTop: 24 }}>Entradas, da melhor para a pior</h3>

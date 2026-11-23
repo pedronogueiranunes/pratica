@@ -42,6 +42,14 @@ const web = () => (webEngine ??= createWebEngine(emit));
 
 // ---------- API pública ----------
 export const engine = {
+  async previewChord(deviceId: string | null, frequencies: number[], volume = 0.5) {
+    if (isNative) { await hookNative(); return invoke("chord_preview", { deviceId, frequencies, volume }); }
+    return web().previewChord(deviceId, frequencies, volume);
+  },
+  async stopPreview() {
+    if (isNative) return invoke("chord_preview_stop");
+    web().stopPreview();
+  },
   async devices(): Promise<DeviceInfo[]> {
     if (!isNative) return web().devices();
     return invoke<DeviceInfo[]>("audio_devices");

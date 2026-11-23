@@ -8,6 +8,7 @@ import {
   noteFromFrequency,
   rms,
   synthesizeClick,
+  synthesizeChordPreview,
   type ClickSoundName,
   type DeviceInfo,
   type EngineEvent,
@@ -26,8 +27,25 @@ interface Sink extends AudioContext {
 export function createWebEngine(emit: Emit) {
   let ctx: Sink | null = null;
   let master: GainNode | null = null;
+  let output: WaveShaperNode | null = null;
   let banks = new Map<string, AudioBuffer>();
   let bankSound: ClickSoundName | null = null;
+  let previewGeneration = 0;
+  let preview: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
+  let previewTail: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
+
+  function stopPreview() {
+    previewGeneration++;
+    if (previewTail) {
+      previewTail.source.stop(); previewTail.source.disconnect(); previewTail.gain.disconnect(); previewTail = null;
+    }
+    if (!preview || !ctx) return;
+    const old = preview; preview = null; previewTail = old;
+    old.gain.gain.cancelScheduledValues(ctx.currentTime);
+    old.gain.gain.setValueAtTime(old.gain.gain.value, ctx.currentTime);
+    old.gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.01);
+    old.source.stop(ctx.currentTime + 0.012);
+  }
 
   // Metrônomo
   let settings: MetronomeSettings | null = null;
@@ -52,7 +70,11 @@ export function createWebEngine(emit: Emit) {
     if (!ctx) {
       ctx = new AudioContext({ latencyHint: "interactive" }) as Sink;
       master = ctx.createGain();
-      master.connect(ctx.destination);
+      output = ctx.createWaveShaper();
+      const curve = new Float32Array(65537);
+      for (let i = 0; i < curve.length; i++) curve[i] = Math.max(-0.98, Math.min(0.98, i * 2 / (curve.length - 1) - 1));
+      output.curve = curve;
+      master.connect(output); output.connect(ctx.destination);
     }
     if (deviceId !== outputDevice && ctx.setSinkId) {
       try {
@@ -149,6 +171,26 @@ export function createWebEngine(emit: Emit) {
 
   return {
     devices: listDevices,
+    stopPreview,
+    async previewChord(deviceId: string | null, frequencies: number[], volume: number) {
+      stopPreview();
+      const generation = previewGeneration;
+      // Mantém a saída do metrônomo enquanto ele estiver ativo.
+      const c = await ensureCtx(settings ? outputDevice : rawId(deviceId));
+      if (generation !== previewGeneration) return;
+      const data = synthesizeChordPreview(frequencies, c.sampleRate, volume);
+      const buffer = c.createBuffer(1, data.length, c.sampleRate);
+      buffer.copyToChannel(data as Float32Array<ArrayBuffer>, 0);
+      const source = c.createBufferSource(), gain = c.createGain();
+      source.buffer = buffer; source.connect(gain); gain.connect(output!);
+      const voice = { source, gain }; preview = voice;
+      source.onended = () => {
+        source.disconnect(); gain.disconnect();
+        if (preview === voice) preview = null;
+        if (previewTail === voice) previewTail = null;
+      };
+      source.start();
+    },
     async startMetronome(deviceId: string | null, s: MetronomeSettings) {
       const c = await ensureCtx(rawId(deviceId));
       buildBanks(s.sound);

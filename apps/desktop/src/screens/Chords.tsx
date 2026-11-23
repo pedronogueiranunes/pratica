@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  BEAT_OPTIONS, PRESET_PAIRS, changesPerMinute, chordFamily, chordTones, commonChordNames, keyUsesFlats, parseChord, shapesFor, trainerState,
+  chordVoicing, BEAT_OPTIONS, PRESET_PAIRS, changesPerMinute, chordFamily, chordTones, commonChordNames, keyUsesFlats, parseChord, shapesFor, trainerState,
 } from "@gx/core";
+import { engine, onEngine } from "../lib/engine";
+import { ChordStaff } from "../components/ChordStaff";
 import { ChordCard, ChordDiagram } from "../components/ChordDiagram";
 import { useMetronome } from "../lib/metronome";
 import { usePractice } from "../lib/practice-state";
@@ -13,15 +15,6 @@ type Family = "todos" | "maior" | "menor" | "sétima" | "outros";
 const FAMILIES: { id: Family; label: string }[] = [
   { id: "todos", label: "Todos" }, { id: "maior", label: "Maiores" }, { id: "menor", label: "Menores" }, { id: "sétima", label: "Com sétima" }, { id: "outros", label: "Outros" },
 ];
-const SHARPS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-const FLATS = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
-/** Nomes das notas do acorde na grafia do próprio nome (Db7M usa bemóis). */
-function toneNames(name: string): string[] {
-  const t = chordTones(name); const c = parseChord(name);
-  if (!t || !c) return [];
-  const names = c.root.endsWith("b") || (!c.root.endsWith("#") && keyUsesFlats(c.root + (/^m(?!aj)/.test(c.suffix) ? "m" : ""))) ? FLATS : SHARPS;
-  return t.intervals.map((i) => names[(t.root + i) % 12]!);
-}
 const TRAINER_KEY = "pratica.chords.trainer";
 export const TRAINER_EXERCISE = "f1-troca-acordes";
 
@@ -54,6 +47,28 @@ export function Chords() {
 }
 
 function Library({ onTrain }: { onTrain: (name: string) => void }) {
+  const { settings } = useApp();
+  const [formIndex, setFormIndex] = useState(0);
+  const [soundOnSelect, setSoundOnSelect] = useState(true);
+  const [volume, setVolume] = useState(0.5);
+  const [audioError, setAudioError] = useState<string | null>(null);
+  const generation = useRef(0);
+  useEffect(() => {
+    const stop = () => { generation.current++; void engine.stopPreview().catch(() => {}); };
+    const hide = () => { if (document.hidden) stop(); };
+    document.addEventListener("visibilitychange", hide);
+    const unlisten = onEngine((event) => {
+      if (event.type === "error" && event.direction !== "input") setAudioError(`Não deu para tocar. Confira a saída em Ajustes. ${event.message}`);
+    });
+    return () => { stop(); unlisten(); document.removeEventListener("visibilitychange", hide); };
+  }, []);
+  const play = async (diagram: ReturnType<typeof shapesFor>["shapes"][number] | undefined) => {
+    const voiced = diagram ? chordVoicing(diagram, settings.tuner.a4) : null;
+    if (!voiced || volume === 0) return;
+    const request = ++generation.current; setAudioError(null);
+    try { await engine.previewChord(settings.metronome.outputDeviceId ?? null, voiced.frequencies, volume); }
+    catch (error) { if (generation.current === request) setAudioError(`Não deu para tocar. Tente de novo. ${String(error)}`); }
+  };
   const [query, setQuery] = useState("");
   const [family, setFamily] = useState<Family>("todos");
   const [open, setOpen] = useState<string | null>(null);
@@ -67,7 +82,8 @@ function Library({ onTrain }: { onTrain: (name: string) => void }) {
     return typedValid && !list.some((n) => n.toLowerCase() === q) ? [typed, ...list] : list;
   }, [family, typed, typedValid]);
   const detail = open ? shapesFor(open) : null;
-  const tones = open ? toneNames(open) : null;
+  const selected = detail?.shapes[formIndex];
+  const voicing = selected ? chordVoicing(selected, settings.tuner.a4) : null;
   return <div className="chord-library">
     <div className="chord-toolbar">
       <input type="search" placeholder="Buscar ou digitar um acorde, como Em7(9) ou D/F#" aria-label="Buscar acorde" value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -75,22 +91,35 @@ function Library({ onTrain }: { onTrain: (name: string) => void }) {
         {FAMILIES.map((f) => <button key={f.id} aria-pressed={family === f.id} onClick={() => setFamily(f.id)}>{f.label}</button>)}
       </div>
     </div>
+    <div className="chord-audio-controls">
+      <label className="chord-preview-toggle"><input type="checkbox" checked={soundOnSelect} onChange={(e) => { setSoundOnSelect(e.target.checked); if (!e.target.checked) { generation.current++; void engine.stopPreview().catch(() => {}); } }} />Som ao selecionar</label>
+      <label className="chord-preview-volume">Volume <input aria-label="Volume da prévia" type="range" min="0" max="100" step="5" value={Math.round(volume * 100)} onChange={(e) => { setVolume(Number(e.target.value) / 100); generation.current++; void engine.stopPreview().catch(() => {}); }} /><span className="num">{Math.round(volume * 100)}%</span></label>
+      <span className="muted small">Som de referência</span>
+    </div>
+    {audioError && <p role="alert" className="error">{audioError}</p>}
     {typed && !names.length && <p className="muted">Não reconheci "{typed}". Tente C, Am, G7, C7M, Em7(9) ou D/F#.</p>}
     {detail && open && <section className="panel chord-detail" aria-label={`Formas de ${open}`}>
       <div className="panel-head">
         <h2 className="chord-detail-name">{open}</h2>
-        {tones && tones.length > 0 && <span className="num muted">{tones.join(" · ")}</span>}
+
         <span className="spacer" />
+        <button className="btn primary" disabled={!voicing || volume === 0} onClick={() => void play(selected)}><IconPlay />Tocar</button>
         <button className="btn" onClick={() => onTrain(open)}>Treinar troca</button>
-        <button className="btn ghost" onClick={() => setOpen(null)}>Fechar</button>
+        <button className="btn ghost" onClick={() => { setOpen(null); generation.current++; void engine.stopPreview().catch(() => {}); }}>Fechar</button>
       </div>
-      <div className="chord-detail-shapes">
-        {detail.shapes.map((d, i) => <ChordDiagram key={i} diagram={d} size="lg" title={`${open}, forma ${i + 1}`} />)}
+      <div className="chord-voicing-layout">
+        <div className="chord-voicing-diagram">
+          {selected ? <ChordDiagram diagram={selected} size="lg" title={`${open}, forma ${formIndex + 1}`} /> : <p className="muted">Sem forma disponível para tocar ou escrever.</p>}
+          {detail.shapes.length > 1 && <div className="seg" role="group" aria-label="Forma do acorde">
+            {detail.shapes.map((d, i) => <button key={i} aria-pressed={formIndex === i} onClick={() => { setFormIndex(i); if (soundOnSelect) void play(d); else void engine.stopPreview().catch(() => {}); }}>Forma {i + 1}</button>)}
+          </div>}
+        </div>
+        {voicing && <ChordStaff voicing={voicing} name={open} />}
       </div>
       <p className="muted small">{detail.source === "gerada" ? "Formas calculadas pelo app a partir das notas do acorde. Confira se soam bem na sua mão." : "Bolinha laranja é a fundamental. O número é o dedo: 1 indicador, 2 médio, 3 anelar, 4 mínimo. X não toca, círculo é corda solta."}</p>
     </section>}
     <div className="chord-grid">
-      {names.map((n) => { const s = shapesFor(n); return <ChordCard key={n} name={n} diagram={s.shapes[0] ?? null} generated={s.source === "gerada"} onClick={() => setOpen(open === n ? null : n)} pressed={open === n} />; })}
+      {names.map((n) => { const s = shapesFor(n); return <ChordCard key={n} name={n} diagram={s.shapes[0] ?? null} generated={s.source === "gerada"} onClick={() => { const index = open === n ? formIndex : 0; setOpen(n); setFormIndex(index); if (soundOnSelect) void play(s.shapes[index]); }} pressed={open === n} />; })}
     </div>
   </div>;
 }

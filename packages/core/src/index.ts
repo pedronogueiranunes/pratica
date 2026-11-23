@@ -22,5 +22,6 @@ export * from "./chordpro";
 export * from "./songs";
 export * from "./chord-shapes";
 export * from "./chord-trainer";
+export * from "./chord-voicing";
 
 export * from "./music-transfer";

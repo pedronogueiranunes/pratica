@@ -2330,3 +2330,35 @@ button.chord-tile[aria-pressed="true"] {
   .main summary { min-height: 44px; }
   .sidebar { background: color-mix(in srgb, var(--bg) 97%, transparent); }
 }
+
+/* Prévia e partitura usam a mesma forma selecionada. */
+.chord-audio-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 28px; margin: -4px 0 24px; }
+.chord-preview-toggle, .chord-preview-volume { min-height: 44px; display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.chord-preview-toggle input { accent-color: var(--accent); width: 18px; height: 18px; }
+.chord-preview-volume input { height: 44px; width: 112px; accent-color: var(--accent); }
+.chord-preview-volume .num { min-width: 4ch; font-size: 12px; }
+.chord-voicing-layout { display: grid; grid-template-columns: minmax(200px, .7fr) minmax(280px, 1fr); align-items: center; gap: 32px; padding: 16px 0 24px; max-width: 920px; }
+.chord-voicing-diagram { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.chord-staff { margin: 0; min-width: 0; }
+.chord-staff figcaption { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; }
+.chord-staff h3 { margin: 0; font-size: 18px; }
+.chord-staff svg { display: block; width: 100%; max-height: 300px; color: var(--fg); }
+.staff-line { stroke: var(--fg-2); stroke-width: 1; }
+.staff-ledger { stroke: currentColor; stroke-width: 1.2; }
+.staff-note { fill: var(--bg); stroke: currentColor; stroke-width: 2.3; }
+.staff-accidental { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.staff-clef { font: 82px 'Apple Symbols', 'Noto Music', 'Segoe UI Symbol', serif; fill: currentColor; }
+.staff-octave { font-size: 13px; fill: currentColor; }
+.staff-pitches { font-size: 13px; line-height: 1.8; margin: 0 0 4px; overflow-wrap: anywhere; }
+.chord-staff p:last-child { margin: 0; }
+@container main (max-width: 620px) {
+  .chord-voicing-layout { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .chord-staff { width: 100%; max-width: 440px; justify-self: center; }
+  .chord-detail .panel-head { flex-wrap: wrap; gap: 12px; }
+  .chord-detail .panel-head .spacer { display: none; }
+  .chord-detail .panel-head h2 { flex-basis: 100%; }
+  .chord-audio-controls { gap: 16px; }
+}
+
+.chord-detail .btn.primary { color: #161616; }
+.chord-grid .chord-diagram { max-width: 100%; height: auto; }
