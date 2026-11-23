@@ -1,5 +1,64 @@
 # Status
 
+## Planejado: inversões, sequenciador e bateria (23/11/2026)
+
+- Registrados os novos pedidos do Pedro em `docs/08-acordes-sequenciador-e-bateria.md` e nos requisitos: inversões, formas alternativas e variações harmônicas; sequência editável de acordes em loop; bateria com liga/desliga, estilos rock, reggae, indie rock, metal, ska, afrobeat e loops simples.
+- Proposta de três volumes independentes (acordes, bateria e metrônomo), um relógio/BPM e saída compartilhados no Mac/web, padrões e síntese originais locais, uso de bateria sem sequência e persistência por eventos. O documento separa regras, motores, integração e testes em quatro entregas.
+- Esta rodada alterou somente documentação; os novos controles e sons ainda não existem. Preservada a implementação local anterior de som/partitura e a interface que o Pedro está ajustando. Sem commit ou push. A0, importação por URL e Fase 4 não avançaram.
+- Verificação: `git diff --check`. Não foram repetidos testes ou builds por não haver mudança executável nesta rodada; os resultados abaixo pertencem à entrega anterior. Para testar as novas funções, aguardar a implementação de cada entrega.
+
+## Acordes: prévia sonora e partitura implementadas (23/11/2026)
+
+Entrega autorizada pelo Pedro enquanto prepara a interface de áudio para a A0. Implementada localmente sobre `26749d9`; sem commit/push desta rodada. A0/A1/TONE3000 e Fase 4 não foram iniciadas ou aprovadas por esta extensão.
+
+### O que mudou
+
+- Biblioteca Acordes: clicar ou usar Enter/Espaço no cartão seleciona e toca uma prévia; repetir o cartão mantém o detalhe aberto e repete a forma atual. Botão Tocar, seletor de formas, opção Som ao selecionar e volume. Fechar/navegar/ocultar aba interrompe. O volume começa em 50% de um ganho de síntese já limitado; preferências são da sessão da biblioteca e voltam ao padrão ao remontar a tela.
+- Diagrama, som e partitura partem da mesma forma validada. `fretMidi` e `chord-voicing.ts` no core calculam as alturas reais, grafia por grau, frequências segundo o A4 do afinador e posição escrita da guitarra uma oitava acima. Respeita baixo/inversão, cordas abafadas/soltas e oitavas; rejeita formas inconsistentes. Uníssonos iguais escritos uma vez, cordas mantidas na síntese.
+- Som de referência original: senoidais com parciais limitadas à taxa de amostragem, envelope/decaimento, até seis vozes e duração de 1,4 s. Sem samples ou dependências novas. Nova prévia substitui a anterior com transição curta; não registra prática ou eventos.
+- Mac: `preview.rs` e comandos Tauri `chord_preview`/`chord_preview_stop`. A saída do metrônomo é compartilhada com a prévia, inclusive ao iniciar/parar o metrônomo. Estado e descarte do stream ficam no controle, com tempo para encerrar a cauda. Callback com scratch fixa em blocos, teto de soma e banco de clique pendente quando a fila de descarte enche, evitando liberar o banco nela. Seleção explícita de saída perdida retorna erro; não faz fallback silencioso. Medir atraso pede parar também a prévia e aguardar seu encerramento.
+- Web: um AudioContext compartilhado; gesto do usuário inicia/resume, geração cancela pedidos antigos ainda aguardando resume, no máximo prévia atual e cauda, desconexão ao terminar e limitador da soma na saída. Não solicita microfone. Prévia preserva a saída do metrônomo em execução.
+- Partitura SVG local: clave de sol da guitarra com oitava indicada, acidentes simples/duplos, linhas suplementares, espaçamento de notas vizinhas e colunas de acidentes. Notas que soam também em texto e descrição acessível. Sem inferir ritmo, compasso ou BPM. Símbolo musical da clave usa fallback nativo; nenhuma fonte ou biblioteca adicionada.
+- Mantidos tokens e componentes existentes. Diagrama/pauta lado a lado no desktop, empilhados em 390 px; diagramas da grade limitados ao cartão no celular. Botão novo com contraste ajustado localmente, sem mudar os botões de outras telas.
+
+### Verificado nesta sessão
+
+| Verificação | Resultado |
+|---|---|
+| `pnpm --filter @gx/core test` | **119 testes passaram** (16 novos) |
+| `cargo test -p audio-engine -p practice-store` | **20 + 10 passaram** |
+| Clippy audio-engine, incluindo testes | Passou com `-D warnings` |
+| Teste da prévia web (`test/chord-preview.mjs`) | Passou: cancelamento antes de resume, repetição rápida, vozes limitadas, desconexão, teto de saída, um contexto com o metrônomo e nenhum pedido de microfone |
+| `pnpm typecheck` | Passou |
+| `PRACTICE_TEST_BROWSER=chrome pnpm test` | Core119, captura web, prévia web, SW controlado e contrato SQLite15 passaram; abertura de outro Chrome foi bloqueada no sandbox (SIGABRT/EPERM), portanto suíte completa não aprovada |
+| `pnpm --filter desktop build:web` | Passou |
+| `pnpm build:app` | Passou; `.app` em `target/release/bundle/macos/Prática.app` |
+| Chrome real via navegador conectado | Desktop1440/390 px, claro/escuro, teclado com Espaço no cartão sem fechar detalhe, troca de formas de Db7M alterando notas da pauta, prévia automática desligada com Tocar manual, forma indisponível com Tocar desabilitado, sem alerta de áudio nos fluxos testados e sem overflow horizontal |
+| Revisão visual externa | **ship**, sem correções materiais no acréscimo; seis capturas válidas em `target/qa-chords/`, com topo e continuação da pauta no celular |
+| `git diff --check` | Passou |
+
+A interação foi executada no Chrome conectado porque o processo headless foi bloqueado. Não foi afirmada escuta física do sinal: faltam conferir volume percebido, qualidade/estalos em saída real, mistura no CoreAudio e uso no Safari/iPhone real. Não foi feito teste completo com leitor de tela nem teste novo de offline em navegador real. As capturas são do app local via Vite; builds finais feitos depois, sem alterações visuais posteriores. Os ajustes finais de controle/encerramento no adaptador nativo não alteram o render revisado.
+
+### Como testar
+
+- **Web local:** `pnpm web --host 127.0.0.1` na raiz; abrir o endereço informado. A aba de revisão desta sessão usa `http://127.0.0.1:4178/`. Em Acordes, clicar E ou C, repetir, experimentar Db7M e trocar Forma1/2/3. Conferir som e pauta; desmarcar Som ao selecionar e testar Tocar. Abrir sem rede só depois de validar o build:web preparado com service worker.
+- **Mac:** abrir o `.app` recém-compilado em `target/release/bundle/macos/Prática.app` ou substituir manualmente a cópia antiga. Conferir a saída em Ajustes, usar Acordes e começar/parar o metrônomo alternando com prévias. Não há painel Amp nesta entrega.
+- Detalhes de decisões e limites em `docs/07-acordes-som-e-partitura.md`.
+
+### Próximas pendências
+
+- Pedido futuro de importação de cifra/tab por link registrado nos requisitos e em `docs/06-fase-3-plano.md`. Exige pesquisa de API/licença/formatos por serviço e aprovação antes de integrar; não foi implementada raspagem nem prometida compatibilidade universal.
+- Reuso da prévia em cifras/exercícios fica para outra entrega. Braço completo/cromagrama da 3C permanece pendente da validação da 3B e de planejamento do próximo bloco. Músicas não ganhou tabs rítmicas nesta sessão.
+- A0 ainda exige `.nam` real, interface e loopback físico. Permanecem pendentes os testes anteriores: afinador real (dispositivo/permissão/canal/buffer/reconexão), medição de atraso e tema nativo, UI em celular real/teclado/movimento reduzido, iCloud entre dois Macs, YouTube153 e Spotify no Laboratório (redirect `http://127.0.0.1/callback`, Client ID próprio).
+
+## Backlog de Acordes: som e partitura (23/11/2026)
+
+- Pedido futuro do Pedro registrado em `docs/07-acordes-som-e-partitura.md`, nos requisitos e no plano da Fase 3: clicar para ouvir o acorde e ver a forma selecionada como partitura. Sem alteração da interface ou implementação nesta sessão.
+- Proposta: mesma fonte de alturas para diagrama, áudio e pauta, respeitando cordas/casas, oitavas, baixo/inversão e cordas abafadas. Clicar novamente repete a prévia; fechamento fica separado. Timbre, convenção de notação, renderizador e prioridade ainda serão combinados antes de começar.
+- A bancada A0 foi publicada em três commits até `65320e2`; o checkout local já foi sincronizado fora desta sessão e está em `26749d9`, com a alteração posterior de alvos de toque no celular preservada.
+- Conferência desta sessão: nenhum `.nam` real encontrado no projeto fora das pastas geradas/dependências e `list` da bancada continua sem dispositivos expostos. A medição física da A0 segue pendente; não foram repetidos benchmarks nem atribuídos resultados de áudio ao vivo.
+- Verificação desta rodada: documentação conferida e `git diff --check`. Sem mudanças executáveis, sem nova rodada de testes/builds. Sem commit ou push desta documentação.
+
 ## Amp A0: paridade C++ executada, teste físico pendente (22/11/2026)
 
 Continuação da bancada A0. O Core C++ agora foi compilado e executado neste Mac ARM64. **A A0 ainda não está aprovada para avançar ao pedal**: falta o modelo real e o caminho físico de áudio, e o benchmark offline registrou pausas acima do prazo. A interface Amp, a versão web e o TONE3000 continuam fora desta entrega. Os commits locais mais recentes de ícone/instalação do webapp foram preservados. O Pedro autorizou o envio da bancada ao GitHub em 22/11. O índice Git local está bloqueado neste ambiente; a publicação usa o conector do GitHub e o checkout local continua pendente de sincronização.

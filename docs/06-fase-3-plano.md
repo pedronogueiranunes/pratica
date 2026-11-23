@@ -26,3 +26,31 @@ Em `crates/practice-store/src/sync.rs`, um evento de tipo desconhecido faz `appl
 - 3A: testes do core com cifras coladas que o Pedro fornecer; contrato SQLite/IndexedDB ampliado; testes Rust de revisões e evento desconhecido; no app, colar, corrigir, salvar, transpor e reabrir.
 - 3B: contrato de playlists; web offline após deploy aprovado; exportar no Mac e importar no Chrome; edição concorrente em dois Macs.
 - 3C: testes de identificação de acordes e cromagrama com sinais sintéticos; no app, tocar notas e acordes com a guitarra e conferir o destaque.
+
+## Backlog de Acordes, solicitado em 23/11/2026
+
+Som ao clicar e partitura do acorde selecionado foram implementados localmente.
+Comportamento, validação e limites em `07-acordes-som-e-partitura.md`.
+
+O próximo bloco solicitado inclui inversões e formas alternativas, sequenciador
+de acordes e bateria de acompanhamento com volumes independentes. Plano e divisão
+em entregas em `08-acordes-sequenciador-e-bateria.md`. Ainda não implementados;
+preservar a interface enquanto o Pedro a ajusta. Não inicia a Fase 4 de integrações
+de música de fundo e adaptação de exercícios.
+
+## Backlog: importar cifra/tab pelo link (23/11/2026)
+
+- Desejo do Pedro: colar o link de um serviço popular na música e o app preencher
+  automaticamente a cifra/tab, reduzindo o trabalho de copiar e colar texto.
+- Fluxo proposto: URL, identificação da fonte, importação quando permitida, prévia
+  editável e confirmação. Guardar link, autor e atribuições exigidas com o conteúdo.
+- Antes de implementar, pesquisar cada serviço, API/licença e formatos oferecidos,
+  apresentar opções e esperar aprovação. Não prometer qualquer URL. Raspagem segue
+  descartada até uma nova decisão explícita; não contornar login, paywall ou bloqueios.
+- Distinguir cifra com acordes/letra, tablatura textual e tablatura com duração/
+  múltiplas pistas. ChordPro sozinho não representa todos esses formatos; a escolha
+  do modelo e de renderização de tabs rítmicas precisa de plano próprio.
+- Importação usa validação, revisões e conflito visível já existentes, sem sobrescrever
+  o conteúdo salvo silenciosamente. Sem dados musicais estimados para preencher lacunas.
+- Se a fonte não for compatível, manter o caminho existente de texto/arquivo/link.
+  Considerar limitações do webapp estático e funcionamento no Mac antes da integração.
