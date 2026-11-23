@@ -1,5 +1,5 @@
 import { chordTones, diagramMatches } from "./chord-shapes";
-import { noteIndex, parseChord } from "./chords";
+import { keyUsesFlats, noteIndex, parseChord, transposeChord } from "./chords";
 import { fretMidi, type Diagram, type StringNo } from "./fretboard";
 
 const LETTERS = ["C", "D", "E", "F", "G", "A", "B"] as const;
@@ -16,6 +16,18 @@ export interface VoicedNote {
   staffStep: number;
 }
 export interface ChordVoicing { notes: VoicedNote[]; frequencies: number[] }
+
+/** Converte uma forma relativa ao capo para casas e nome reais, sem alterar a fonte. */
+export function chordAtCapo(diagram: Diagram, capo = 0): Diagram | null {
+  if (!Number.isInteger(capo) || capo < 0 || capo > 12 || !chordVoicing(diagram)) return null;
+  const actual: Diagram = {
+    ...diagram, name: capo === 0 ? diagram.name : transposeChord(diagram.name, capo, keyUsesFlats(transposeChord(diagram.name, capo))),
+    notes: diagram.notes.map((note) => ({ ...note, fret: note.fret + capo })),
+    muted: diagram.muted ? [...diagram.muted] : undefined,
+    barre: diagram.barre ? { ...diagram.barre, fret: diagram.barre.fret + capo } : undefined,
+  };
+  return chordVoicing(actual) ? actual : null;
+}
 
 /** Grafia pelo grau, em vez de escolher todos os sustenidos ou todos os bemóis. */
 function spelling(name: string, pc: number): { letter: string; alteration: number } | null {

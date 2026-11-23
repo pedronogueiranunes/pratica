@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  exportChordPro, downloadName, chartState, chordsUsed, filterSongs, shapesFor, parseChordPro, plainTextToChordPro, transposeDoc, transposeChord,
+  exportChordPro, downloadName, chartState, filterSongs, parseChordPro, plainTextToChordPro, transposeDoc, transposeChord,
   type ChartRevision, type DataOrigin, type Song,
 } from "@gx/core";
 import { useSongs, type ImportDraft } from "../lib/songs-state";
@@ -8,8 +8,7 @@ import { MusicTransfer } from "../components/MusicTransfer";
 import { downloadText } from "../lib/download";
 import { PlaylistsPanel } from "../components/PlaylistsPanel";
 import { ChordChart } from "../components/ChordChart";
-import { ChordCard } from "../components/ChordDiagram";
-import { useNav } from "../lib/nav";
+import { SongChords } from "../components/SongChords";
 
 const KEYS = ["C", "C#", "Db", "D", "Eb", "E", "F", "F#", "Gb", "G", "Ab", "A", "Bb", "B"];
 const PHASES = [1, 2, 3, 4] as const;
@@ -109,6 +108,7 @@ function SongView({ song }: { song: Song }) {
   }, [song.chartId, s.version]);
   const state = useMemo(() => chartState(revisions), [revisions]);
   const doc = useMemo(() => state.current ? transposeDoc(parseChordPro(state.current.chordpro), shift) : null, [state.current, shift]);
+  const capo = song.capo ?? doc?.meta.capo ?? 0;
   const key = song.key ? (shift ? `${song.key.value} → ${transposeChord(song.key.value, shift)}` : song.key.value) : null;
 
   const openImport = (kind: ImportDraft["kind"], text = "") => s.setImportDraft({ songId: song.id, chartId: song.chartId, parentRevision: state.current?.revision, text, sourceUrl: song.links.find((l) => l.kind === "origem")?.url ?? "", kind });
@@ -142,7 +142,7 @@ function SongView({ song }: { song: Song }) {
       <div><dt>Tom</dt><dd className="num">{key ?? "não informado"}{song.key && !shift && <span className="song-origin">{originLabel(song.key.origin)}</span>}</dd></div>
       <div><dt>BPM</dt><dd className="num">{song.bpm?.value ?? "não informado"}{song.bpm && <span className="song-origin">{originLabel(song.bpm.origin)}</span>}</dd></div>
       <div><dt>Compasso</dt><dd className="num">{song.timeSignature ?? "não informado"}</dd></div>
-      <div><dt>Capo</dt><dd className="num">{song.capo ? `casa ${song.capo}` : "sem capo"}</dd></div>
+      <div><dt>Capo</dt><dd className="num">{capo ? `casa ${capo}` : "sem capo"}</dd></div>
       <div><dt>Fase</dt><dd className="num">{song.phase ?? "sem fase"}</dd></div>
     </dl>
     {song.links.length > 0 && <ul className="song-links">{song.links.map((l) => <li key={l.url}><a href={l.url} target="_blank" rel="noreferrer">{l.label || (l.kind === "origem" ? "Cifra original" : new URL(l.url).hostname)}</a></li>)}</ul>}
@@ -173,36 +173,12 @@ function SongView({ song }: { song: Song }) {
       {state.conflicts.map((revision, i) => <div key={revision.revision}><div className="chart-compare-head"><span>Outra versão {i + 1} · {new Date(revision.createdAt).toLocaleString("pt-BR")}</span><button className="btn" aria-label={`Ficar com a outra versão ${i + 1}`} disabled={busy} onClick={() => resolve(revision)}>Ficar com esta</button></div><ChordChart doc={parseChordPro(revision.chordpro)} label={`Outra versão ${i + 1}`} /></div>)}
     </div>}
     {!comparing && (doc ? <>
-      <ChordStrip chords={chordsUsed(doc)} />
-      <ChordChart doc={doc} label={`Cifra de ${song.title}`} />
+      <SongChords key={`${song.id}:${shift}:${state.current?.revision}:${capo}`} doc={doc} label={`Cifra de ${song.title}`} capo={capo} />
     </> : song.chartId && !revisions.length && !loadError ? <p className="muted">Abrindo a cifra…</p>
       : <div className="chart-empty">
         <p>Sem cifra ainda. Cole do site que você usa ou abra um arquivo ChordPro. Ela fica salva aqui e abre sem internet.</p>
         <button className="btn primary" onClick={() => openImport("colado")}>Adicionar cifra</button>
       </div>)}
-  </div>;
-}
-
-/** Diagramas dos acordes da cifra, na ordem em que aparecem. Clique troca a forma. */
-function ChordStrip({ chords }: { chords: string[] }) {
-  const nav = useNav();
-  const [variant, setVariant] = useState<Record<string, number>>({});
-  if (!chords.length) return null;
-  return <div className="chord-strip-songs">
-    <div className="chord-strip-scroll" role="list" aria-label="Acordes da música">
-      {chords.map((name) => {
-        const r = shapesFor(name);
-        const i = (variant[name] ?? 0) % Math.max(1, r.shapes.length);
-        return <div role="listitem" key={name}>
-          <ChordCard name={name} diagram={r.shapes[i] ?? null} size="sm" generated={r.source === "gerada"}
-            onClick={r.shapes.length > 1 ? () => setVariant((v) => ({ ...v, [name]: i + 1 })) : undefined} />
-        </div>;
-      })}
-    </div>
-    <div className="chord-strip-foot">
-      <span className="muted small">Clique num acorde para ver outra forma.</span>
-      {chords.length > 1 && <button className="btn ghost" onClick={() => nav.openChordTrainer(chords.slice(0, 8))}>Treinar a troca destes acordes</button>}
-    </div>
   </div>;
 }
 
@@ -325,7 +301,8 @@ function SongEditor() {
         <option value="">Não informado</option>{["2/4", "3/4", "4/4", "6/8", "12/8"].map((t) => <option key={t}>{t}</option>)}
       </select></label>
     <label className="field"><span className="label">Capo</span>
-      <select value={song.capo ?? 0} onChange={(e) => { const next = { ...song }; const v = Number(e.target.value); if (v) next.capo = v; else delete next.capo; s.setSongDraft({ song: next, isNew }); }}>
+      <select value={song.capo ?? ""} onChange={(e) => { const next = { ...song }; if (e.target.value === "") delete next.capo; else next.capo = Number(e.target.value); s.setSongDraft({ song: next, isNew }); }}>
+        <option value="">Da cifra, se informado</option>
         {Array.from({ length: 13 }, (_, i) => <option key={i} value={i}>{i ? `Casa ${i}` : "Sem capo"}</option>)}
       </select></label>
     <label className="field"><span className="label">Link da cifra</span><input type="text" inputMode="url" placeholder="https://" value={origin} onChange={(e) => setOrigin(e.target.value.trim())} aria-invalid={!linkOk} /></label>

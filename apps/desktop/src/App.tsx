@@ -69,6 +69,7 @@ export function App() {
     },
     back: () => setRoute(prevRoute),
     openChordTrainer: (chords: string[]) => { presetTrainer(chords); setRoute("acordes"); document.querySelector(".main")?.scrollTo(0, 0); },
+    openChordSequence: () => { try { localStorage.setItem("pratica.chords.tab", "sequencia"); } catch {} setRoute("acordes"); document.querySelector(".main")?.scrollTo(0, 0); },
   };
   useEffect(() => {
     if (!isNative) document.body.classList.add("no-vibrancy");

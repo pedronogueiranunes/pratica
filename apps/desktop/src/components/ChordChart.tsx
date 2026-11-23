@@ -16,18 +16,19 @@ function words(segments: Piece[]): Piece[][] {
 }
 
 /** Cifra em ChordPro renderizada com o acorde em cima da sílaba. Feita para ler a 1 m. */
-export function ChordChart({ doc, label }: { doc: ChordProDoc; label: string }) {
+export function ChordChart({ doc, label, onChord, selectedChord }: { doc: ChordProDoc; label: string; onChord?: (name: string, target: HTMLButtonElement) => void; selectedChord?: string | null }) {
+  const chord = (name: string) => onChord && name.trim() ? <button type="button" className="chart-chord chart-chord-action" aria-label={`Explorar acorde ${name}`} aria-pressed={selectedChord === name} onClick={(e) => onChord(name, e.currentTarget)}>{name}</button> : <span className="chart-chord">{name || NBSP}</span>;
   return <div className="chart" role="document" aria-label={label}>
     {doc.lines.map((line, i) => {
       if (line.type === "blank") return <div key={i} className="chart-gap" aria-hidden="true" />;
       if (line.type === "comment") return <p key={i} className="chart-comment">{line.text}</p>;
       if (line.type === "section") return line.edge === "start" ? <p key={i} className="chart-comment">{SECTIONS[line.name] ?? line.name}</p> : null;
       if (line.segments.every((s) => !s.text.trim()))
-        return <div key={i} className="chart-line chords-only">{line.segments.map((s, j) => s.chord ? <span key={j} className="chart-chord">{s.chord}</span> : null)}</div>;
+        return <div key={i} className="chart-line chords-only">{line.segments.map((s, j) => s.chord ? <span key={j}>{chord(s.chord)}</span> : null)}</div>;
       return <div key={i} className="chart-line">
         {words(line.segments).map((word, j) => <span key={j} className="chart-word">
           {word.map((s, k) => <span key={k} className="chart-seg">
-            {s.chord !== undefined && <span className="chart-chord">{s.chord || NBSP}</span>}
+            {s.chord !== undefined && chord(s.chord)}
             <span className="chart-text">{s.text || NBSP}</span>
           </span>)}
         </span>)}

@@ -5,6 +5,7 @@ export interface Nav {
   back: () => void;
   /** Abre a troca de acordes com estes acordes. */
   openChordTrainer: (chords: string[]) => void;
+  openChordSequence: () => void;
 }
-export const NavContext = createContext<Nav>({ openExercise: () => {}, back: () => {}, openChordTrainer: () => {} });
+export const NavContext = createContext<Nav>({ openExercise: () => {}, back: () => {}, openChordTrainer: () => {}, openChordSequence: () => {} });
 export const useNav = () => useContext(NavContext);

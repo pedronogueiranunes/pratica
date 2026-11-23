@@ -1321,6 +1321,27 @@ input[type="text"]::placeholder {
   padding-right: 0.5em;
   line-height: 1.4;
 }
+.chart-chord-action {
+  display: inline-block;
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 4px;
+}
+.chart-chord-action:hover, .chart-chord-action[aria-pressed="true"] { color: var(--accent); text-decoration-color: currentColor; }
+.song-chord-detail { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 24px 0; }
+.song-chord-detail .panel-head, .song-chord-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.song-chord-detail .btn { min-height: 44px; }
+.song-chord-detail .chord-voicing-layout { grid-template-columns: minmax(0, 1fr); }
+@container main (min-width: 1100px) {
+  .song-chord-detail .chord-voicing-layout { grid-template-columns: minmax(200px, .7fr) minmax(280px, 1fr); }
+}
 .chart-text {
   color: var(--fg);
 }
@@ -2349,6 +2370,36 @@ button.chord-tile[aria-pressed="true"] {
 .sequence-drums .sequence-controls { margin-top: 12px; }
 .sequence-drums select { max-width: 100%; min-height: 44px; }
 .drum-panel { margin-top: 24px; }
+.fret-explorer { min-width: 0; margin-top: 24px; }
+.fret-explorer.embedded { margin-top: 16px; }
+.fret-controls { display: flex; align-items: end; flex-wrap: wrap; gap: 12px 20px; margin: 20px 0; }
+.fret-controls > label:not(.inline-check):not(.chord-preview-volume) { display: flex; flex-direction: column; gap: 6px; color: var(--fg-2); font-size: 14px; }
+.fret-controls select, .fret-controls input[type="text"] { min-height: 44px; max-width: 100%; }
+.fret-controls input[type="text"] { width: 180px; }
+.fret-controls .btn { min-height: 44px; }
+.fret-scroll { max-width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.fret-full { display: block; max-width: none; flex: none; }
+.fret-grid-lines line { stroke: var(--line-strong); stroke-width: 1; }
+.fret-grid-lines .fret-nut { stroke: var(--fg-2); stroke-width: 3; }
+.fret-grid-lines circle { fill: var(--fg-2); }
+.fret-grid-lines text { fill: var(--fg-2); font: 12px var(--font-mono); }
+.fret-cell { cursor: pointer; outline: none; }
+.fret-cell .fret-hit { fill: transparent; stroke: transparent; }
+.fret-cell circle { fill: var(--bg); stroke: transparent; stroke-width: 2; }
+.fret-cell text { fill: var(--fg-2); font: 13px var(--font-mono); pointer-events: none; }
+.fret-cell.highlighted circle { fill: var(--bg-raised); }
+.fret-cell.highlighted text { fill: var(--fg); }
+.fret-cell.root circle { stroke: var(--accent); }
+.fret-cell.chosen circle { fill: var(--accent); }
+.fret-cell.chosen text { fill: #161616; font-weight: 600; }
+.fret-cell:focus-visible .fret-hit { stroke: var(--accent); stroke-width: 3; }
+.fret-cell:hover .fret-hit { fill: color-mix(in srgb, var(--accent) 8%, transparent); }
+.fret-cell.sounding circle { stroke: var(--fg); stroke-width: 3; }
+.fret-result { font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.fret-result p { margin: 8px 0; }
+.fret-explorer .btn.primary { color: #161616; }
+.song-fretboard { border-top: 1px solid var(--line); margin-bottom: 20px; padding-top: 16px; min-width: 0; }
+.song-fretboard summary { min-height: 44px; cursor: pointer; font-weight: 600; }
 .exercise-practice .drum-panel { margin-top: 0; }
 @media (max-width: 720px) {
   .seg button { height: 40px; min-width: 36px; }
