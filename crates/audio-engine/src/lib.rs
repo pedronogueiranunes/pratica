@@ -16,3 +16,7 @@ pub use click::ClickSound;
 pub use latency::{rank, should_suggest_switch, Connection, DeviceInfo, Purpose, Recommendation};
 pub use metronome::{Metronome, MetronomeSettings, Tick};
 pub use pitch::{note_from_frequency, NoteReading, PitchDetector};
+
+pub mod amp;
+#[cfg(feature = "io")]
+pub mod amp_io;
