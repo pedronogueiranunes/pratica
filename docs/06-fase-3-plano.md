@@ -34,8 +34,10 @@ Comportamento, validação e limites em `07-acordes-som-e-partitura.md`.
 
 O próximo bloco solicitado inclui inversões e formas alternativas, sequenciador
 de acordes e bateria de acompanhamento com volumes independentes. Plano e divisão
-em entregas em `08-acordes-sequenciador-e-bateria.md`. Ainda não implementados;
-preservar a interface enquanto o Pedro a ajusta. Não inicia a Fase 4 de integrações
+em entregas em `08-acordes-sequenciador-e-bateria.md`. Inversões e formas alternativas
+implementadas; sequenciador também entregue, com rascunho de sessão descrito em
+`09-sequenciador.md`. Bateria e persistência da sequência ainda pendentes. Preservar os
+ajustes do Pedro na interface. Não inicia a Fase 4 de integrações
 de música de fundo e adaptação de exercícios.
 
 ## Backlog: importar cifra/tab pelo link (23/11/2026)

@@ -22,8 +22,8 @@ Um app para a prática diária de guitarra, focado em dexteridade, acordes e esc
 13. **Prévia dos acordes (implementada localmente, 23/11/2026):** tocar o acorde ao clicar no cartão, com a forma selecionada e possibilidade de repetir o som.
 14. **Partitura do acorde (implementada localmente, 23/11/2026):** visualizar o acorde selecionado na pauta, coerente com as notas e oitavas do diagrama. Comportamento e limites em `07-acordes-som-e-partitura.md`.
 15. **Importação por link (pedido futuro, 23/11/2026):** colar o link de uma cifra/tab na música e preencher o conteúdo automaticamente nos serviços compatíveis, com prévia, origem e confirmação. Compatibilidade, APIs, permissões e formatos precisam ser pesquisados por serviço antes da implementação; o pedido não reabre automaticamente a decisão anterior de descartar raspagem.
-16. **Inversões e variações de acordes (planejado, 23/11/2026):** selecionar baixo/inversão, formas em outras posições e variações harmônicas, mantendo diagrama, som e pauta coerentes.
-17. **Sequenciador de acordes (planejado, 23/11/2026):** adicionar formas a uma sequência, definir tempos, reordenar e ouvir em loop no BPM do metrônomo.
+16. **Inversões e variações de acordes (implementadas localmente, 23/11/2026):** selecionar baixo/inversão, formas em outras posições e variações harmônicas, mantendo diagrama, som e pauta coerentes. Até seis formas validadas; limites em `07-acordes-som-e-partitura.md`.
+17. **Sequenciador de acordes (implementado, 23/11/2026):** adicionar até 16 formas exatas, definir 1/2/4/8 tempos, reordenar e ouvir em loop no BPM do metrônomo. Rascunho da sessão; persistência por eventos fica para outra entrega. Ver `09-sequenciador.md`.
 18. **Bateria de acompanhamento (planejado, 23/11/2026):** ligar/desligar padrões de rock, reggae, indie rock, metal, ska, afrobeat e loops simples. Volume próprio, independente do metrônomo e dos acordes, com relógio compartilhado; também utilizável sem sequência. Plano em `08-acordes-sequenciador-e-bateria.md`.
 
 ## Pontos técnicos que o desenvolvimento precisa resolver cedo
