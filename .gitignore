@@ -6,3 +6,5 @@ target/
 apps/desktop/src-tauri/gen/
 .env
 .env.local
+# Lock temporário da bancada, que pode usar uma cópia MIT local durante a avaliação.
+experiments/amp-a0/Cargo.lock

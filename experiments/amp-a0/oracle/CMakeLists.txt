@@ -1,0 +1,12 @@
+cmake_minimum_required(VERSION 3.16)
+project(pratica_nam_oracle LANGUAGES C CXX)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+if(NOT NAMCORE)
+  message(FATAL_ERROR "Informe -DNAMCORE com a cópia fixada do Core")
+endif()
+file(GLOB NAM_SOURCES "${NAMCORE}/NAM/*.cpp" "${NAMCORE}/NAM/*.c" "${NAMCORE}/NAM/*/*.cpp")
+add_executable(pratica-nam-oracle main.cpp ${NAM_SOURCES} "${NAMCORE}/Dependencies/AudioDSPTools/dsp/wav.cpp")
+target_include_directories(pratica-nam-oracle SYSTEM PRIVATE "${NAMCORE}" "${NAMCORE}/Dependencies/eigen" "${NAMCORE}/Dependencies/nlohmann" "${NAMCORE}/Dependencies/AudioDSPTools/dsp")
+# Oráculo genérico, sem especialização A2-fast. Sem fast-math para comparação numérica.
+target_compile_options(pratica-nam-oracle PRIVATE -O3)
