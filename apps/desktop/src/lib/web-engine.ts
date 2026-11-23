@@ -9,6 +9,8 @@ import {
   rms,
   synthesizeClick,
   synthesizeChordPreview,
+  validAudioSequence, sequenceAtBeat,
+  type AudioSequenceStep,
   type ClickSoundName,
   type DeviceInfo,
   type EngineEvent,
@@ -33,6 +35,34 @@ export function createWebEngine(emit: Emit) {
   let previewGeneration = 0;
   let preview: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
   let previewTail: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
+  let transportGeneration = 0;
+  let sequence: { steps: AudioSequenceStep[]; buffers: AudioBuffer[]; beat: number; click: boolean; runId: number } | null = null;
+  let sequenceBus: GainNode | null = null;
+  const scheduled = new Set<AudioBufferSourceNode>();
+  const chordVoices = new Set<{ source: AudioBufferSourceNode; gain: GainNode; end: number }>();
+
+  function stopTransport(silent = false) {
+    const runId = sequence?.runId ?? 0;
+    transportGeneration++;
+    window.clearInterval(timer);
+    sequenceBus?.gain.setTargetAtTime(0, ctx?.currentTime ?? 0, 0.003);
+    master?.gain.setTargetAtTime(0, ctx?.currentTime ?? 0, 0.003);
+    for (const source of scheduled) { try { source.stop((ctx?.currentTime ?? 0) + 0.02); } catch {} }
+    scheduled.clear();
+    chordVoices.clear();
+    sequenceBus = null; sequence = null; settings = null;
+    if (!silent) emit({ type: "sequenceState", running: false, runId });
+    if (!silent) emit({ type: "metronomeState", running: false, deviceId: null });
+  }
+
+  function scheduleSource(buffer: AudioBuffer, destination: AudioNode, when: number, duration?: number) {
+    const source = ctx!.createBufferSource(); source.buffer = buffer; source.connect(destination);
+    scheduled.add(source);
+    source.onended = () => { source.disconnect(); scheduled.delete(source); };
+    source.start(Math.max(when, ctx!.currentTime));
+    if (duration) source.stop(Math.max(when, ctx!.currentTime) + duration);
+    return source;
+  }
 
   function stopPreview() {
     previewGeneration++;
@@ -105,6 +135,10 @@ export function createWebEngine(emit: Emit) {
   function schedule() {
     if (!ctx || !settings || !master) return;
     const s = settings;
+    if (sequence && anchorTime + (nextIndex - anchorIndex) * per(s) < ctx.currentTime - 0.5) {
+      emit({ type: "error", code: "streamFailed", direction: "output", message: "O navegador pausou o áudio. Inicie o loop de novo." });
+      stopTransport(); return;
+    }
     const latency = ((ctx.baseLatency ?? 0) + (ctx.outputLatency ?? 0)) * 1000;
     while (true) {
       const when = anchorTime + (nextIndex - anchorIndex) * per(s);
@@ -115,10 +149,33 @@ export function createWebEngine(emit: Emit) {
       const beat = beatTotal % s.beatsPerBar;
       const accent = s.accentFirstBeat && beat === 0 && sub === 0 && s.beatsPerBar > 1;
       const kind = sub > 0 ? "subdivision" : accent ? "accent" : "beat";
-      const src = ctx.createBufferSource();
-      src.buffer = banks.get(kind) ?? null;
-      src.connect(master);
-      src.start(Math.max(when, ctx.currentTime));
+      scheduleSource(banks.get(kind)!, master, when);
+      if (sequence && sub === 0) {
+        const state = sequenceAtBeat(sequence.steps, sequence.beat++)!;
+        const step = sequence.steps[state.step]!;
+        if (state.beatsLeft === step.beats) {
+          for (const old of chordVoices) {
+            if (old.end > when) {
+              old.gain.gain.cancelScheduledValues(when);
+              old.gain.gain.setValueAtTime(1, when);
+              old.gain.gain.linearRampToValueAtTime(0, when + 0.01);
+              old.source.stop(when + 0.012); old.end = when + 0.012;
+            }
+          }
+          // Uma voz por bloco. A cauda termina antes do ataque seguinte.
+          const duration = Math.min(1.4, step.beats * 60 / s.bpm);
+          const bus = sequenceBus!;
+          const gain = ctx.createGain(); gain.connect(bus);
+          gain.gain.setValueAtTime(1, when);
+          gain.gain.setValueAtTime(1, when + Math.max(0, duration - 0.012));
+          gain.gain.linearRampToValueAtTime(0, when + duration);
+          const voice = scheduleSource(sequence.buffers[state.step]!, gain, when, duration);
+          const entry = { source: voice, gain, end: when + duration }; chordVoices.add(entry);
+          const ended = voice.onended;
+          voice.onended = (event) => { chordVoices.delete(entry); ended?.call(voice, event); gain.disconnect(); if (bus !== sequenceBus) bus.disconnect(); };
+        }
+        emit({ type: "sequenceBeat", runId: sequence.runId, ...state, audibleInMs: Math.max(0, (when - ctx.currentTime) * 1000 + latency) });
+      }
       emit({
         type: "tick",
         tick: { index: i, bar: Math.floor(beatTotal / s.beatsPerBar), beat, sub, accent, frame: 0, offsetInBlock: 0 },
@@ -172,6 +229,28 @@ export function createWebEngine(emit: Emit) {
   return {
     devices: listDevices,
     stopPreview,
+    stopSequence: stopTransport,
+    async startSequence(deviceId: string | null, s: MetronomeSettings, steps: AudioSequenceStep[], volume: number, click: boolean, runId: number) {
+      if (!validAudioSequence(steps, volume)) throw new Error("Sequência inválida.");
+      if (!Number.isFinite(s.bpm) || s.bpm < 20 || s.bpm > 400 || !Number.isInteger(s.subdivision) || s.subdivision < 1 || s.subdivision > 4 || !Number.isInteger(s.beatsPerBar) || s.beatsPerBar < 1 || s.beatsPerBar > 16 || !Number.isFinite(s.volume) || s.volume < 0 || s.volume > 1) throw new Error("Configuração do transporte inválida.");
+      stopTransport(true); stopPreview();
+      const generation = transportGeneration;
+      const c = await ensureCtx(rawId(deviceId));
+      if (generation !== transportGeneration) return;
+      const buffers = steps.map((step) => {
+        const data = synthesizeChordPreview(step.frequencies, c.sampleRate, volume);
+        const buffer = c.createBuffer(1, data.length, c.sampleRate);
+        buffer.copyToChannel(data as Float32Array<ArrayBuffer>, 0); return buffer;
+      });
+      buildBanks(s.sound); settings = s;
+      sequenceBus = c.createGain(); sequenceBus.connect(output!);
+      sequence = { steps, buffers, beat: 0, click, runId };
+      master!.gain.setValueAtTime(click ? s.volume : 0, c.currentTime);
+      anchorTime = c.currentTime + 0.05; anchorIndex = 0; nextIndex = 0;
+      timer = window.setInterval(schedule, TICK_MS);
+      emit({ type: "metronomeState", running: true, deviceId });
+      emit({ type: "sequenceState", running: true, runId }); schedule();
+    },
     async previewChord(deviceId: string | null, frequencies: number[], volume: number) {
       stopPreview();
       const generation = previewGeneration;
@@ -192,7 +271,10 @@ export function createWebEngine(emit: Emit) {
       source.start();
     },
     async startMetronome(deviceId: string | null, s: MetronomeSettings) {
+      stopTransport();
+      const generation = transportGeneration;
       const c = await ensureCtx(rawId(deviceId));
+      if (generation !== transportGeneration) return;
       buildBanks(s.sound);
       settings = s;
       master!.gain.setTargetAtTime(s.volume, c.currentTime, 0.01);
@@ -215,13 +297,11 @@ export function createWebEngine(emit: Emit) {
         anchorTime = Math.max(lastTickTime + per(s), ctx.currentTime + 0.01);
       }
       buildBanks(s.sound);
-      master?.gain.setTargetAtTime(s.volume, ctx.currentTime, 0.01);
+      master?.gain.setTargetAtTime(sequence && !sequence.click ? 0 : s.volume, ctx.currentTime, 0.01);
       settings = s;
     },
     stopMetronome() {
-      window.clearInterval(timer);
-      settings = null;
-      emit({ type: "metronomeState", running: false, deviceId: null });
+      stopTransport();
     },
     async startTuner(deviceId: string | null, channel: number, ref: number) {
       a4 = ref;

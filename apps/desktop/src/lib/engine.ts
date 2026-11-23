@@ -1,7 +1,7 @@
 // Ponte entre a interface e o motor de áudio em Rust.
 // Fora do Tauri (webapp) usa o motor em Web Audio de web-engine.ts.
 
-import { rankDevices, type DeviceInfo, type EngineEvent, type MetronomeSettings, type Recommendation } from "@gx/core";
+import { rankDevices, type AudioSequenceStep, type DeviceInfo, type EngineEvent, type MetronomeSettings, type Recommendation } from "@gx/core";
 import { createWebEngine } from "./web-engine";
 
 export const isNative = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -9,6 +9,7 @@ export const isNative = typeof window !== "undefined" && "__TAURI_INTERNALS__" i
 type Listener = (e: EngineEvent) => void;
 const listeners = new Set<Listener>();
 let nativeHook: Promise<void> | null = null;
+let sequenceRequest = 0;
 
 async function hookNative() {
   if (!isNative) return;
@@ -42,6 +43,16 @@ const web = () => (webEngine ??= createWebEngine(emit));
 
 // ---------- API pública ----------
 export const engine = {
+  async startSequence(deviceId: string | null, settings: MetronomeSettings, steps: AudioSequenceStep[], volume: number, click: boolean, runId: number) {
+    const request = ++sequenceRequest;
+    if (isNative) { await hookNative(); if (request !== sequenceRequest) return; return invoke("sequence_start", { deviceId, settings, steps, volume, click, runId }); }
+    return web().startSequence(deviceId, settings, steps, volume, click, runId);
+  },
+  async stopSequence() {
+    sequenceRequest++;
+    if (isNative) return invoke("metronome_stop");
+    web().stopSequence();
+  },
   async previewChord(deviceId: string | null, frequencies: number[], volume = 0.5) {
     if (isNative) { await hookNative(); return invoke("chord_preview", { deviceId, frequencies, volume }); }
     return web().previewChord(deviceId, frequencies, volume);
@@ -77,6 +88,7 @@ export const engine = {
     web().updateMetronome(settings);
   },
   async stopMetronome() {
+    sequenceRequest++;
     if (isNative) return invoke("metronome_stop");
     web().stopMetronome();
   },

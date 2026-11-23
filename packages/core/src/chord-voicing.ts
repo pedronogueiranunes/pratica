@@ -36,6 +36,12 @@ function spelling(name: string, pc: number): { letter: string; alteration: numbe
   return Math.abs(alteration) <= 2 ? { letter: LETTERS[index]!, alteration } : null;
 }
 
+/** Nome de um grau do acorde, com a mesma grafia usada na pauta. */
+export function chordNoteName(name: string, pc: number): string | null {
+  const note = spelling(name, pc);
+  return note ? note.letter + (note.alteration > 0 ? "#".repeat(note.alteration) : "b".repeat(-note.alteration)) : null;
+}
+
 /** Uma forma validada é a fonte única da altura reproduzida e da nota escrita. */
 export function chordVoicing(diagram: Diagram, a4 = 440): ChordVoicing | null {
   const tones = chordTones(diagram.name);

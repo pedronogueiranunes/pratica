@@ -5,6 +5,7 @@
 //! ring buffers sem lock (rtrb).
 
 use crate::click::ClickBank;
+use crate::sequence::{SequencePlan, SequencePlayer};
 use crate::preview::{ChordPreview, PreviewPlan};
 use crate::latency::{Connection, DeviceInfo};
 use crate::metronome::{Metronome, MetronomeSettings, Tick};
@@ -29,6 +30,10 @@ const MEASURE_SETTLE: Duration = Duration::from_millis(250);
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum EngineEvent {
+    #[serde(rename_all = "camelCase")]
+    SequenceState { running: bool, run_id: u32 },
+    #[serde(rename_all = "camelCase")]
+    SequenceBeat { run_id: u32, step: usize, beats_left: u32, audible_in_ms: f32 },
     #[serde(rename_all = "camelCase")]
     Tick { tick: Tick, audible_in_ms: f32 },
     #[serde(rename_all = "camelCase")]
@@ -66,7 +71,10 @@ pub enum ErrorCode {
     UnsupportedFormat,
 }
 
+// Plano fixo via canal: evita alocar ou liberar a sequência na callback.
+#[allow(clippy::large_enum_variant)]
 enum Command {
+    StartSequence { device_id: Option<String>, settings: MetronomeSettings, plan: SequencePlan },
     Preview { device_id: Option<String>, frequencies: Vec<f32>, volume: f32 },
     StopPreview,
     StartMetronome { device_id: Option<String>, settings: MetronomeSettings },
@@ -80,7 +88,9 @@ enum Command {
     Shutdown,
 }
 
+#[allow(clippy::large_enum_variant)]
 enum AudioCmd {
+    Sequence(SequencePlan),
     Start,
     Stop,
     Preview(PreviewPlan),
@@ -111,6 +121,9 @@ impl Drop for ThreadGuard {
 }
 
 impl EngineHandle {
+    pub fn start_sequence(&self, device_id: Option<String>, settings: MetronomeSettings, plan: SequencePlan) {
+        let _ = self.tx.send(Command::StartSequence { device_id, settings, plan });
+    }
     pub fn preview_chord(&self, device_id: Option<String>, frequencies: Vec<f32>, volume: f32) {
         let _ = self.tx.send(Command::Preview { device_id, frequencies, volume });
     }
@@ -233,12 +246,14 @@ fn find_device(input: bool, id: Option<&str>) -> Option<cpal::Device> {
 }
 
 struct MetronomeStream {
+    sequence_run: u32,
     running: bool,
     preview_until: Option<Instant>,
     _stream: cpal::Stream,
     device_id: String,
     cmd: rtrb::Producer<AudioCmd>,
     ticks: rtrb::Consumer<(Tick, f32)>,
+    sequence_beats: rtrb::Consumer<(usize, u32, u32, f32)>,
     garbage: rtrb::Consumer<Box<ClickBank>>,
     sample_rate: u32,
     settings: MetronomeSettings,
@@ -301,6 +316,27 @@ impl EngineThread {
 
     fn handle(&mut self, cmd: Command) {
         match cmd {
+            Command::StartSequence { device_id, settings, plan } => {
+                if self.metronome.as_ref().is_some_and(|m| device_id.as_ref().is_some_and(|id| *id != m.device_id)) { self.metronome = None; }
+                if self.metronome.is_none() {
+                    match self.open_metronome(device_id.as_deref(), settings, false) {
+                        Ok(m) => self.metronome = Some(m),
+                        Err((code, message)) => { self.error(code, message); (self.emit)(EngineEvent::SequenceState { running: false, run_id: plan.run_id }); return; }
+                    }
+                }
+                self.handle(Command::UpdateMetronome(settings));
+                if let Some(m) = self.metronome.as_mut() {
+                    if m.cmd.push(AudioCmd::Sequence(plan)).is_ok() {
+                        m.running = true;
+                        m.sequence_run = plan.run_id;
+                        (self.emit)(EngineEvent::MetronomeState { running: true, device_id: Some(m.device_id.clone()) });
+                        (self.emit)(EngineEvent::SequenceState { running: true, run_id: plan.run_id });
+                    } else {
+                        self.handle(Command::StopMetronome);
+                        self.error(ErrorCode::StreamFailed, "Aguarde um instante e tente iniciar novamente.");
+                    }
+                } else { (self.emit)(EngineEvent::SequenceState { running: false, run_id: self.metronome.as_ref().map_or(0, |m| m.sequence_run) }); }
+            }
             Command::Preview { device_id, frequencies, volume } => {
                 let Some(plan) = PreviewPlan::new(&frequencies, volume) else {
                     self.error(ErrorCode::StreamFailed, "Prévia de acorde inválida."); return;
@@ -323,6 +359,7 @@ impl EngineThread {
                 if let Some(m) = self.metronome.as_mut() { let _ = m.cmd.push(AudioCmd::StopPreview); }
             }
             Command::StartMetronome { device_id, settings } => {
+                (self.emit)(EngineEvent::SequenceState { running: false, run_id: self.metronome.as_ref().map_or(0, |m| m.sequence_run) });
                 if self.metronome.as_ref().is_some_and(|m| device_id.as_ref().is_none_or(|id| *id == m.device_id)) {
                     self.handle(Command::UpdateMetronome(settings));
                     if let Some(m) = self.metronome.as_mut() {
@@ -355,6 +392,7 @@ impl EngineThread {
                 }
             }
             Command::StopMetronome => {
+                (self.emit)(EngineEvent::SequenceState { running: false, run_id: self.metronome.as_ref().map_or(0, |m| m.sequence_run) });
                 if let Some(m) = self.metronome.as_mut() {
                     let _ = m.cmd.push(AudioCmd::Stop); m.running = false;
                     let tail = Instant::now() + Duration::from_millis(200);
@@ -451,6 +489,9 @@ impl EngineThread {
             while let Ok((tick, audible_in_ms)) = m.ticks.pop() {
                 (self.emit)(EngineEvent::Tick { tick, audible_in_ms });
             }
+            while let Ok((step, beats_left, run_id, audible_in_ms)) = m.sequence_beats.pop() {
+                (self.emit)(EngineEvent::SequenceBeat { step, beats_left, run_id, audible_in_ms });
+            }
             while m.garbage.pop().is_ok() {}
             let ms = f32::from_bits(m.latency_ms.load(Ordering::Relaxed));
             if ms > 0.0 && (ms - m.last_latency).abs() >= 1.0 {
@@ -489,7 +530,9 @@ impl EngineThread {
         while let Ok((direction, message)) = self.errors_rx.try_recv() {
             match direction {
                 Direction::Output => {
+                    let run_id = self.metronome.as_ref().map_or(0, |m| m.sequence_run);
                     self.metronome = None;
+                    (self.emit)(EngineEvent::SequenceState { running: false, run_id });
                     (self.emit)(EngineEvent::MetronomeState { running: false, device_id: None });
                 }
                 Direction::Input => {
@@ -527,16 +570,22 @@ impl EngineThread {
         let format = supported.sample_format();
         let config: cpal::StreamConfig = supported.config();
         let sample_rate = config.sample_rate;
+        if !(8000..=192000).contains(&sample_rate) { return Err((ErrorCode::UnsupportedFormat, "Taxa de saída não suportada.".into())); }
         if config.channels == 0 || config.channels > 128 { return Err((ErrorCode::UnsupportedFormat, "Saída com número de canais não suportado.".into())); }
 
         let (cmd_tx, cmd_rx) = rtrb::RingBuffer::<AudioCmd>::new(64);
         let (tick_tx, tick_rx) = rtrb::RingBuffer::<(Tick, f32)>::new(256);
+        let (sequence_tx, sequence_rx) = rtrb::RingBuffer::<(usize, u32, u32, f32)>::new(256);
         let (garbage_tx, garbage_rx) = rtrb::RingBuffer::<Box<ClickBank>>::new(16);
         let latency = Arc::new(AtomicU32::new(0));
 
         let mut metro = Metronome::new(sample_rate, settings);
         if running { metro.start(); }
         let ctx = OutputCtx {
+            sequence: SequencePlayer::default(),
+            sequence_beats: sequence_tx,
+            click_gain: 1.0,
+            click_target: 1.0,
             preview: ChordPreview::new(sample_rate),
             pending_bank: None,
             metro,
@@ -559,12 +608,14 @@ impl EngineThread {
         stream.play().map_err(|e| (ErrorCode::StreamFailed, e.to_string()))?;
 
         Ok(MetronomeStream {
+            sequence_run: 0,
             running,
             preview_until: None,
             _stream: stream,
             device_id: id,
             cmd: cmd_tx,
             ticks: tick_rx,
+            sequence_beats: sequence_rx,
             garbage: garbage_rx,
             sample_rate,
             settings: settings.sanitized(),
@@ -625,6 +676,10 @@ impl EngineThread {
 }
 
 struct OutputCtx {
+    sequence: SequencePlayer,
+    sequence_beats: rtrb::Producer<(usize, u32, u32, f32)>,
+    click_gain: f32,
+    click_target: f32,
     pending_bank: Option<Box<ClickBank>>,
     preview: ChordPreview,
     metro: Metronome,
@@ -654,11 +709,13 @@ where
                 let old = ctx.metro.swap_bank(bank);
                 let _ = ctx.garbage.push(old);
             }
-            while ctx.pending_bank.is_none() {
+            for _ in 0..64 {
+                if ctx.pending_bank.is_some() { break; }
                 let Ok(cmd) = ctx.cmd.pop() else { break; };
                 match cmd {
-                    AudioCmd::Start => ctx.metro.start(),
-                    AudioCmd::Stop => ctx.metro.stop(),
+                    AudioCmd::Sequence(plan) => { ctx.preview.stop(); ctx.click_gain = if plan.click { 1.0 } else { 0.0 }; ctx.sequence.start(plan); ctx.click_target = ctx.sequence.click_gain(); ctx.metro.start(); }
+                    AudioCmd::Start => { ctx.sequence.stop(); ctx.click_target = 1.0; ctx.metro.start(); }
+                    AudioCmd::Stop => { if ctx.sequence.is_running() { ctx.sequence.stop(); ctx.preview.stop(); } ctx.metro.stop(); }
                     AudioCmd::Preview(plan) => ctx.preview.play(plan),
                     AudioCmd::StopPreview => ctx.preview.stop(),
                     AudioCmd::Settings(s) => ctx.metro.set_settings(s),
@@ -683,14 +740,36 @@ where
             for chunk in data.chunks_mut(chunk_len) {
                 let buf = &mut ctx.scratch[..chunk.len()];
                 let ticks = &mut ctx.ticks;
+                let mut attacks = [None; 128];
+                let mut attack_count = 0;
+                let sequence = &mut ctx.sequence;
+                let sequence_beats = &mut ctx.sequence_beats;
                 ctx.metro.render(buf, channels, |mut tick| {
+                    let local_offset = tick.offset_in_block;
+                    if tick.sub == 0 {
+                        if let Some((step, left, attack)) = sequence.beat() {
+                            let ms = base_ms + (offset + local_offset) as f32 / sample_rate * 1000.0;
+                            let _ = sequence_beats.push((step, left, sequence.run_id(), ms));
+                            if let Some(plan) = attack {
+                                if attack_count < attacks.len() { attacks[attack_count] = Some((local_offset, plan)); attack_count += 1; }
+                            }
+                        }
+                    }
                     tick.offset_in_block += offset;
                     let ms = base_ms + tick.offset_in_block as f32 / sample_rate * 1000.0;
                     let _ = ticks.push((tick, ms));
                 });
-                for frame in buf.chunks_exact_mut(channels) {
+                let mut next_attack = 0;
+                for (frame_index, frame) in buf.chunks_exact_mut(channels).enumerate() {
+                    if next_attack < attack_count {
+                        if let Some((at, plan)) = attacks[next_attack] {
+                            if at == frame_index { ctx.preview.play(plan); next_attack += 1; }
+                        }
+                    }
                     let preview = ctx.preview.sample();
-                    for sample in frame { *sample = (*sample + preview).clamp(-0.98, 0.98); }
+                    let target = ctx.click_target;
+                    ctx.click_gain += (target - ctx.click_gain).clamp(-1.0 / (sample_rate * 0.01), 1.0 / (sample_rate * 0.01));
+                    for sample in frame { *sample = (*sample * ctx.click_gain + preview).clamp(-0.98, 0.98); }
                 }
                 for (o, sample) in chunk.iter_mut().zip(buf.iter()) { *o = T::from_sample(*sample); }
                 offset += chunk.len() / channels;

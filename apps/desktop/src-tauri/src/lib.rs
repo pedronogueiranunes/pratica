@@ -45,6 +45,13 @@ fn chord_preview(audio: State<Audio>, device_id: Option<String>, frequencies: Ve
 fn chord_preview_stop(audio: State<Audio>) { audio.0.stop_preview(); }
 
 #[tauri::command]
+fn sequence_start(audio: State<Audio>, device_id: Option<String>, settings: MetronomeSettings, steps: Vec<audio_engine::sequence::SequenceStep>, volume: f32, click: bool, run_id: u32) -> Result<(), String> {
+    let mut plan = audio_engine::sequence::SequencePlan::new(&steps, volume, click).ok_or("Sequência inválida.")?;
+    plan.run_id = run_id;
+    audio.0.start_sequence(device_id, settings, plan); Ok(())
+}
+
+#[tauri::command]
 fn tuner_start(audio: State<Audio>, device_id: Option<String>, channel: u16, a4: f32, buffer_frames: Option<u32>) {
     audio.0.start_tuner_with_buffer(device_id, channel, a4, buffer_frames);
 }
@@ -99,6 +106,7 @@ pub fn run() {
             metronome_stop,
             chord_preview,
             chord_preview_stop,
+            sequence_start,
             tuner_start,
             tuner_set_a4,
             tuner_stop,

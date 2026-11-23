@@ -65,6 +65,8 @@ export interface Recommendation {
 export type EngineErrorCode = "noDevice" | "deviceLost" | "streamFailed" | "unsupportedFormat";
 
 export type EngineEvent =
+  | { type: "sequenceState"; runId: number; running: boolean }
+  | { type: "sequenceBeat"; runId: number; step: number; beatsLeft: number; audibleInMs: number }
   | { type: "tick"; tick: Tick; audibleInMs: number }
   | { type: "pitch"; reading: NoteReading | null; clarity: number; level: number }
   | { type: "latency"; direction: "input" | "output"; deviceId: string; ms: number }

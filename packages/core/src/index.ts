@@ -23,5 +23,7 @@ export * from "./songs";
 export * from "./chord-shapes";
 export * from "./chord-trainer";
 export * from "./chord-voicing";
+export * from "./chord-options";
+export * from "./chord-sequence";
 
 export * from "./music-transfer";
