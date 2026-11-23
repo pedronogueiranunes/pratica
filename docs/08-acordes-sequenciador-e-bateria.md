@@ -3,7 +3,8 @@
 Pedidos do Pedro em 23/11/2026. A primeira entrega, inversões e formas alternativas,
 foi implementada localmente após autorização para prosseguir. O sequenciador da
 segunda entrega também está implementado, documentado em `09-sequenciador.md`;
-bateria e persistência por eventos continuam planejadas. A prévia sonora e a
+bateria e persistência por eventos também estão implementadas localmente,
+documentadas em `10-bateria-e-sequencias-salvas.md`. A prévia sonora e a
 partitura entregues estão documentadas em `07-acordes-som-e-partitura.md`.
 Preservar os ajustes do Pedro na interface; a extensão usa os componentes existentes.
 

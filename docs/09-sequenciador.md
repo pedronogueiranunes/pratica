@@ -3,8 +3,9 @@
 Entrega local de 23/11/2026 do segundo bloco proposto em
 `08-acordes-sequenciador-e-bateria.md`. A terceira aba **Sequência**, em Acordes,
 permite montar e ouvir formas da Biblioteca em loop. Este documento registra o
-comportamento implementado; bateria e recuperação após fechar o app continuam
-nos próximos blocos.
+comportamento da primeira entrega. A extensão em
+`10-bateria-e-sequencias-salvas.md` substitui as limitações de bateria,
+mixer bloqueado durante reprodução e rascunho perdido ao fechar descritas abaixo.
 
 ## Comportamento entregue
 
