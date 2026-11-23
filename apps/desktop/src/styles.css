@@ -2320,3 +2320,13 @@ button.chord-tile[aria-pressed="true"] {
 .music-transfer summary { cursor: pointer; padding: 8px 0; font-weight: 600; }
 .music-transfer .actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .transfer-preview { margin-top: 16px; max-width: 70ch; overflow-wrap: anywhere; }
+
+/* Celular: alvos de toque de 44 px e barra de abas quase opaca */
+@media (max-width: 720px) {
+  .seg button { height: 40px; min-width: 36px; }
+  .btn,
+  .main select,
+  .main input:not([type="range"]):not([type="checkbox"]):not(.switch),
+  .main summary { min-height: 44px; }
+  .sidebar { background: color-mix(in srgb, var(--bg) 97%, transparent); }
+}
