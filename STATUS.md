@@ -1,5 +1,118 @@
 # Status
 
+## Amp A0: paridade C++ executada, teste físico pendente (22/11/2026)
+
+Continuação da bancada A0. O Core C++ agora foi compilado e executado neste Mac ARM64. **A A0 ainda não está aprovada para avançar ao pedal**: falta o modelo real e o caminho físico de áudio, e o benchmark offline registrou pausas acima do prazo. A interface Amp, a versão web e o TONE3000 continuam fora desta entrega. Os commits locais mais recentes de ícone/instalação do webapp foram preservados. O Pedro autorizou o envio da bancada ao GitHub em 22/11. O índice Git local está bloqueado neste ambiente; a publicação usa o conector do GitHub e o checkout local continua pendente de sincronização.
+
+### O que mudou
+
+- Compilação da referência NeuralAmpModelerCore v0.6.0 (`0b3d3c97b0859a3a8c92a8628c4dd89a25eb5842`). A rede do Terminal continuou bloqueada; as fontes foram obtidas pelo conector GitHub, com **466 blobs conferidos por hash Git**, incluindo as dependências nos commits fixados. Cópia em `target/amp-a0/core-source-0b3d3c9/` e manifesto em `target/amp-a0/source-manifest.json`, ambos ignorados. Não houve alteração no código upstream para compilar.
+- Referência genérica, sem A2-fast e sem prewarm no reset, com buffer explícito 64/128. O comparador Rust aceita o mesmo buffer e reporta qual usou. Tolerância permanece 1e-5, descartando o receptive field inicial do WaveNet.
+- Dois modelos A2 sintéticos novos, com pesos gerados pelo projeto, exercitam GATED/BLENDED, FiLM, convolução agrupada, bottleneck e head de dois taps. Nenhum `.nam` de terceiros ou arquivo de áudio foi adicionado ao repositório.
+- `bench` ganhou tempo de CPU da thread por bloco, separado do tempo de parede, além de contagem de blocos que atingem/ultrapassam o prazo. Leitura do relógio é apenas no benchmark offline, fora da callback; inclui o custo da instrumentação.
+- `scripts/validate-offline.py`: gera fixtures, executa paridade em ambos os buffers e três benchmarks seriados de 10 s por configuração. Relatório com hashes dos binários, modelos e entrada; falhas de execução/paridade separadas de estouros de prazo. Saída 0 sem falhas offline, 1 para execução/paridade/DSP, 2 para prazo. Nunca aprova RTL ou o candidato automaticamente.
+- O script de build da referência passa a conferir os commits dos submódulos e recusar alterações nos arquivos versionados das fontes locais. A sintaxe foi conferida; o caminho via `git clone` permanece sem execução por bloqueio de rede. A compilação real desta sessão usou a cópia conferida por blobs com CMake.
+
+### Resultados executados
+
+| Verificação | Resultado |
+|---|---|
+| Referência C++ e bancada Rust release | Compilaram em ARM64 |
+| Paridade Core C++ / nam-rs | **14/14 passaram**: sete modelos em 64/128; erro máximo **1,49e-8**, tolerância 1e-5 |
+| Abrangência | LSTM mínimo/H32, WaveNet mínimo/C16, container de submodelos e os dois casos A2. Não prova todos os recursos/formas de arquivo NAM |
+| Controle negativo de paridade | Referência alterada foi recusada, código 1 |
+| Benchmarks offline | **42 rodadas**, todas sem alocações/liberações no DSP; **9 blocos acima do prazo de parede**, nenhum acima do prazo de CPU da thread |
+| Testes da bancada | **6 passaram**, incluindo contagem de estouros e relógio de CPU |
+| Testes Rust do app | audio-engine **18**, practice-store **10**, todos passaram |
+| Clippy da bancada, incluindo testes | Passou com `-D warnings` |
+| `PRACTICE_TEST_BROWSER=chrome pnpm test` | Core **103**, SQLite **15**, captura web e SW controlado passaram. Chrome não iniciou no sandbox (SIGABRT/EPERM); suíte completa não aprovada |
+| Build web | `pnpm --filter desktop build:web` passou |
+| Build app | `pnpm build:app` passou; bundle em `target/release/bundle/macos/Prática.app` |
+| Dispositivos físicos / modelo real | Nenhum dispositivo exposto à bancada (`list` vazio); nenhum `.nam` real fornecido. Sem stream, CPU ao vivo ou RTL físico nesta sessão |
+
+Relatório completo: `target/amp-a0/offline-report.json`. O roteiro terminou com **código 2** por prazo. Nas três repetições por configuração, maiores p99/pico de parede:
+
+| Rede | Buffer | Maior p99 | Pico | Blocos acima do prazo |
+|---|---|---|---|---|
+| LSTM H32 | 64 | 105 µs | 639 µs | 0 |
+| LSTM H32 | 128 | 213 µs | 10.179 µs | 4 |
+| WaveNet C16 | 64 | 177 µs | 278 µs | 0 |
+| WaveNet C16 | 128 | 318 µs | 20.017 µs | 5 |
+
+Prazos a 48 kHz: 1.333/2.667 µs para 64/128. Picos de CPU da thread ficaram abaixo de 800 µs nas redes maiores. A diferença entre CPU e parede é compatível com preempção/escalonamento de um processo offline, mas **não garante estabilidade nas callbacks CoreAudio**. Nenhum valor acima é latência de ida e volta. Os resultados não autorizam avançar com base apenas no benchmark sintético.
+
+### Repetir e fechar a A0
+
+Na raiz do projeto, o executável da referência e o da bancada já estão compilados:
+
+```sh
+python3 experiments/amp-a0/scripts/validate-offline.py \
+  --oracle target/amp-a0/oracle-build/pratica-nam-oracle
+```
+
+Para testar seu modelo, acrescente `--model /caminho/modelo.nam`. `--input` permite um sinal JSON maior quando o receptive field exceder o fixture. Depois, executar `list`, `monitor` e `bypass` no Terminal do Mac, conferir buffer real, CPU da callback e estabilidade por 10 min, e medir o RTL físico com a montagem de referência simultânea do README. Critério mantido: até 12 ms repetidos, sem erros de stream/fila, alocações ou estouro de prazo e conferência tocando a guitarra. Se falhar, registrar os números e parar. Roteiro completo em `experiments/amp-a0/README.md`.
+
+Sem alterações na interface do Amp nesta continuação. Permanecem os testes manuais anteriores: áudio real do afinador, medição de atraso/tema nativo, UI nos dois temas e celular/teclado/movimento reduzido, iCloud entre Macs e provas de YouTube/Spotify no Laboratório.
+
+## Amp A0: bancada implementada, aprovação de risco pendente (22/11/2026)
+
+Esta sessão começou a fase Amp pela prova A0, separada da Fase 4. **Não há pedal na interface nem aprovação do motor ainda.** As alterações anteriores da 3B foram preservadas; 3C não iniciada. Sem commit, push ou publicação.
+
+### Implementado
+
+- `experiments/amp-a0/`: executável CLI isolado com `list`, `bench`, `render`, `compare`, `monitor`, `bypass` e `analyze-rtl`. Candidato `nam-rs = 0.4.0`, MIT, ainda fora das dependências do app distribuído. A bancada aceita um `.nam` local por execução, sem copiar para iCloud.
+- `audio-engine/src/amp.rs` e `amp_io.rs`: entrada e saída cpal na mesma interface externa/taxa, canal selecionado, buffer solicitado de 64/128 e fila rtrb limitada. Carregamento/warmup fora das callbacks. Sem I/O, mutex ou alocação intencional no processamento; contador de heap da bancada cobre a região marcada do host/modelo, não o driver.
+- Saída inicial -24 dB, rampa de 20 ms, fade-out ao terminar e teto de amostra -3 dBFS (não é limitador true-peak). NaN/Inf na saída leva a silêncio e encerramento. Bluetooth e dispositivo interno são recusados. Não há fallback para outro dispositivo.
+- Relatórios JSON: CPU do processo ao vivo em % de um núcleo, tempos p50/p95/p99/pico, carga do prazo da callback, frames reais, underflow/overflow, reequilíbrio, clipping e alocações/liberações. `stream_checks_passed` exige processamento real e ausência de falhas, alocações e estouro do prazo; retorna código de erro se falhar. `candidate_approved` continua falso, pois o relatório não substitui a prova física/paridade.
+- Gerador de modelos e sinais originais: LSTM/A2/WaveNet mínimos com equações independentes, LSTM H32 e WaveNet C16 para estresse, probe WAV e captura sintética de atraso conhecido. Tudo gerado em `target/amp-a0/`, ignorado pelo Git. Nenhum modelo, IR ou áudio de terceiros foi incluído.
+- Analisador offline de WAV estéreo de referência/retorno simultâneos, correlação com rejeição de silêncio, baixa confiança e picos periódicos ambíguos. Montagem de loopback documentada no README. Não declara topologia verificada nem deduz RTL pela soma de buffers.
+- Host de referência C++ e script fixado no NeuralAmpModelerCore v0.6.0 (`0b3d3c97b0859a3a8c92a8628c4dd89a25eb5842`), preparados para comparação, **ainda não compilados/executados**. Sem troca de modelo, IR, gate, calibração ou mistura com o metrônomo nesta A0; ficam para A1 após aprovação da prova.
+
+### Executado nesta sessão
+
+| Verificação | Resultado real |
+|---|---|
+| Build release ARM64 da bancada | Passou |
+| Testes da bancada | 4 passaram, incluindo equação LSTM em blocos diferentes e controle positivo do contador de heap |
+| Rust: audio-engine / practice-store | 18 / 10 passaram |
+| Clippy com `-D warnings` | Passou no audio-engine e na bancada, incluindo testes |
+| Comparações matemáticas sintéticas | LSTM erro máximo 3,73e-9; A2 1,86e-9; WaveNet mínimo 0; tolerância 1e-5. **Não é paridade com C++** |
+| Analisador com captura sintética | Recuperou 321 amostras, correlação 1. Não representa latência física |
+| `PRACTICE_TEST_BROWSER=chrome pnpm test` | Core 103, contrato SQLite 15, captura web e testes controlados do SW passaram; falhou ao iniciar Chrome no sandbox (SIGABRT/EPERM). Suíte completa não aprovada |
+| `pnpm --filter desktop build:web` | Passou |
+| `pnpm build:app` | Passou; bundle em `target/release/bundle/macos/Prática.app`. Não adiciona interface Amp |
+| Dispositivos expostos à bancada | Lista vazia neste ambiente. Nenhum stream físico executado |
+
+Benchmarks **offline**, 5 s de sinal a 48 kHz, redes sintéticas sem captura de amplificador:
+
+| Rede / bloco | CPU consumida no processo | p99 / pico de parede por bloco | Alocações/liberações no DSP |
+|---|---|---|---|
+| LSTM H32 / 64 | 0,408 s | 116 / 151 µs | 0 / 0 |
+| WaveNet C16 / 64 | 0,675 s | 426 / 3217 µs | 0 / 0 |
+| WaveNet C16 / 128, durante testes/build concorrentes | 0,541 s | 1002 / 27425 µs | 0 / 0 |
+
+O prazo de um bloco a 48 kHz é 1333 µs em 64 frames e 2667 µs em 128. Os picos da WaveNet excederam o prazo, portanto **estes resultados não aprovam execução ao vivo**. São tempos de parede de um processo offline, sujeitos à preempção; não permitem concluir CPU ao vivo, tocabilidade ou desempenho de um amp real. Não avançar para A1/web/TONE3000 com base nesses números.
+
+O crates.io estava sem resolução DNS. A compilação usou uma cópia MIT fixada de `nam-rs` (`6462dd59a927de0cdc3c48cbf1dece51882d7727`) em `target/amp-a0/nam-rs-6462dd5/`, obtida pelo conector GitHub, via override local do Cargo. Fonte/licenças permanecem apenas nessa pasta ignorada. O lock da bancada com path local foi ignorado; não houve alteração do lock de produção. Falta compilar o pacote pelo crates.io e fixar o lock definitivo se o candidato for aprovado.
+
+### Como testar e o que falta
+
+Roteiro completo, comandos de compilação, comparação e montagem de loopback: `experiments/amp-a0/README.md`. O executável compilado é `experiments/amp-a0/target/release/pratica-amp-a0`.
+
+```sh
+# Na raiz do projeto, fora do ambiente restrito:
+experiments/amp-a0/target/release/pratica-amp-a0 list
+experiments/amp-a0/target/release/pratica-amp-a0 bench \
+  --model /caminho/do/modelo.nam --frames 64 --seconds 10
+experiments/amp-a0/target/release/pratica-amp-a0 monitor \
+  --device 'ID_DA_INTERFACE' --model /caminho/do/modelo.nam \
+  --input-channel 1 --output-channel 1 --frames 64 --seconds 60
+```
+
+Repetir em 128 frames; desativar monitoramento direto, metrônomo/afinador do app e monitoração da DAW. Usar interface externa e fones com fio. Não foi encontrado `.nam` real no projeto. Para fechar A0 faltam: paridade contra C++ em WaveNet/LSTM/A2 e no modelo local, monitor com guitarra, CPU ao vivo, estabilidade de 10 min e RTL físico repetido até 12 ms, com o buffer real conferido. A montagem documentada usa duas entradas/saídas, referência e retorno gravados no mesmo relógio; uma captura sintética não atende ao critério. Se falhar, registrar os números e parar.
+
+TONE3000 permanece sem integração e depende de aprovação dos termos. Presets, migração, interface Amp, WASM/AudioWorklet e unificação do stream do metrônomo não foram implementados nesta prova. Permanecem as pendências anteriores de áudio real, atraso em Ajustes/tema nativo, UI nos dois temas e celular/teclado/movimento reduzido, sync entre Macs e provas YouTube/Spotify no Laboratório.
+
 ## Verificação da 3B no Mac e publicação (22/11/2026)
 - Rodado no Mac do Pedro antes do push: `PRACTICE_TEST_BROWSER=chrome pnpm test` (core **103**, SQLite **15**, IndexedDB **16** com Chrome instalado), `pnpm typecheck`, `pnpm --filter desktop build:web` e `cargo test --workspace` passaram.
 - Continuam **não executados**: `pnpm --filter desktop test:qa:3b` (capturas desktop/390 px nos dois temas, conflitos, playlists, offline, atualização), teste real do service worker no navegador, áudio real, medição CoreAudio, iCloud entre dois Macs e Laboratório (YouTube/153, Spotify). A 3B só deve ser tida como validada depois do `test:qa:3b`.
