@@ -22,6 +22,15 @@ Em `crates/practice-store/src/sync.rs`, um evento de tipo desconhecido faz `appl
 - **3B:** playlists, exportar/importar (.chordpro e pacote .json), service worker e persistência no web, conflito de revisões na interface.
 - **3C:** braço completo (core: mapa de notas, identificação de acordes por conjunto de notas, cromagrama; interface: painel em Ferramentas e na música).
 
+### Progresso da 3C em 23/11
+
+Primeiro bloco implementado localmente em `12-braco-interativo.md`: mapa das
+150 posições (casas 0–24), acordes e cinco escalas, seleção manual, identificação
+exata com ambiguidades e som de referência. Integrado a Ferramentas e ao acorde
+explorado na cifra, com casas reais do capo. Não encerra a 3C: falta ligar YIN
+ao braço, cromagrama experimental e avanço da cifra pelo metrônomo. Esses modos
+não são simulados por animações do bloco manual.
+
 ## Como testar
 - 3A: testes do core com cifras coladas que o Pedro fornecer; contrato SQLite/IndexedDB ampliado; testes Rust de revisões e evento desconhecido; no app, colar, corrigir, salvar, transpor e reabrir.
 - 3B: contrato de playlists; web offline após deploy aprovado; exportar no Mac e importar no Chrome; edição concorrente em dois Macs.
@@ -35,8 +44,11 @@ Comportamento, validação e limites em `07-acordes-som-e-partitura.md`.
 O próximo bloco solicitado inclui inversões e formas alternativas, sequenciador
 de acordes e bateria de acompanhamento com volumes independentes. Plano e divisão
 em entregas em `08-acordes-sequenciador-e-bateria.md`. Inversões e formas alternativas
-implementadas; sequenciador também entregue, com rascunho de sessão descrito em
-`09-sequenciador.md`. Bateria e persistência da sequência ainda pendentes. Preservar os
+implementadas; sequenciador, bateria e persistência entregues em
+`09-sequenciador.md` e `10-bateria-e-sequencias-salvas.md`. A extensão local
+`11-acordes-na-cifra.md` leva som, pauta, inversões e formas para os acordes
+das músicas, incluindo conversão de capo ao enviar à sequência. Braço completo
+e cromagrama da 3C continuam como próximo bloco, não implementados aqui. Preservar os
 ajustes do Pedro na interface. Não inicia a Fase 4 de integrações
 de música de fundo e adaptação de exercícios.
 
