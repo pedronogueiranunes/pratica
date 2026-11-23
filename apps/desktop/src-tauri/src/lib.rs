@@ -45,10 +45,18 @@ fn chord_preview(audio: State<Audio>, device_id: Option<String>, frequencies: Ve
 fn chord_preview_stop(audio: State<Audio>) { audio.0.stop_preview(); }
 
 #[tauri::command]
-fn sequence_start(audio: State<Audio>, device_id: Option<String>, settings: MetronomeSettings, steps: Vec<audio_engine::sequence::SequenceStep>, volume: f32, click: bool, run_id: u32) -> Result<(), String> {
-    let mut plan = audio_engine::sequence::SequencePlan::new(&steps, volume, click).ok_or("Sequência inválida.")?;
+fn sequence_start(audio: State<Audio>, device_id: Option<String>, settings: MetronomeSettings, steps: Vec<audio_engine::sequence::SequenceStep>, volume: f32, click: bool, run_id: u32, drums: Option<audio_engine::drums::DrumConfig>) -> Result<(), String> {
+    let drums = drums.unwrap_or_default();
+    if drums.enabled && settings.beats_per_bar != 4 { return Err("A bateria precisa de compasso 4/4.".into()); }
+    let mut plan = audio_engine::sequence::SequencePlan::with_drums(&steps, volume, click, drums).ok_or("Sequência inválida.")?;
     plan.run_id = run_id;
     audio.0.start_sequence(device_id, settings, plan); Ok(())
+}
+
+#[tauri::command]
+fn sequence_mixer(audio: State<Audio>, run_id: u32, mixer: audio_engine::sequence::SequenceMixer) -> Result<(), String> {
+    if !mixer.valid() { return Err("Volumes ou bateria inválidos.".into()); }
+    audio.0.sequence_mixer(run_id, mixer); Ok(())
 }
 
 #[tauri::command]
@@ -107,6 +115,7 @@ pub fn run() {
             chord_preview,
             chord_preview_stop,
             sequence_start,
+            sequence_mixer,
             tuner_start,
             tuner_set_a4,
             tuner_stop,

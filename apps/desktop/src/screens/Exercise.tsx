@@ -10,6 +10,7 @@ import { PracticeForm } from "../components/PracticeForm";
 import { ExerciseProgression } from "../components/ExerciseProgression";
 import { usePractice } from "../lib/practice-state";
 import { MetronomePanel } from "../components/MetronomePanel";
+import { DrumPanel } from "../components/DrumPanel";
 
 async function openExternal(url: string) {
   if (isNative) {
@@ -141,6 +142,7 @@ export function Exercise({ id }: { id: string }) {
 
         <section className="exercise-practice">
           <MetronomePanel compact />
+          <DrumPanel />
           {ex.metrica.tipo === "bpm" && <div className="panel"><ExerciseProgression key={id} exercise={ex} onAchieved={setAchieved} /></div>}
           <div className="panel"><PracticeForm key={id} exercise={ex} initialBpm={achieved} /></div>
         </section>

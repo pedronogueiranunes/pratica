@@ -9,7 +9,7 @@ describe("transferência de repertório", () => {
     const pack = createMusicPackage(events, "2026-11-22T12:00:00Z");
     expect(pack.events).toEqual(events.slice(0, 3));
     expect(readMusicPackage(JSON.stringify(pack))).toEqual(pack);
-    expect(packageSummary(pack)).toEqual({ songs: 1, playlists: 1, revisions: 1, deferred: 0, deletions: 1 });
+    expect(packageSummary(pack)).toEqual({ sequences: 0, songs: 1, playlists: 1, revisions: 1, deferred: 0, deletions: 1 });
   });
   it("aceita eventos futuros do repertório sem aceitar dados conhecidos inválidos", () => {
     const future = event("future", "song.future", { opaque: true });

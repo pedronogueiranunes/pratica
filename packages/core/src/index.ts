@@ -25,5 +25,7 @@ export * from "./chord-trainer";
 export * from "./chord-voicing";
 export * from "./chord-options";
 export * from "./chord-sequence";
+export * from "./drums";
+export * from "./saved-sequence";
 
 export * from "./music-transfer";

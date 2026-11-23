@@ -9,7 +9,8 @@ import {
   rms,
   synthesizeClick,
   synthesizeChordPreview,
-  validAudioSequence, sequenceAtBeat,
+  validAudioSequence, sequenceAtBeat, compileDrums, defaultDrums, DRUM_INSTRUMENTS, synthesizeDrum, validAudioDrums, validSequenceMixer,
+  type AudioDrums, type SequenceMixer,
   type AudioSequenceStep,
   type ClickSoundName,
   type DeviceInfo,
@@ -36,8 +37,13 @@ export function createWebEngine(emit: Emit) {
   let preview: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
   let previewTail: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
   let transportGeneration = 0;
-  let sequence: { steps: AudioSequenceStep[]; buffers: AudioBuffer[]; beat: number; click: boolean; runId: number } | null = null;
+  let sequence: { steps: AudioSequenceStep[]; buffers: AudioBuffer[]; beat: number; click: boolean; runId: number; drums: AudioDrums; drumPattern: number[] } | null = null;
   let sequenceBus: GainNode | null = null;
+  let drumBus: GainNode | null = null;
+  const drumBanks = new Map<number, AudioBuffer>();
+  let drumQueue: { when: number; step: number }[] = [];
+  let drumEnabled = false;
+  const drumVoices = new Map<number, { source: AudioBufferSourceNode; gain: GainNode; end: number }>();
   const scheduled = new Set<AudioBufferSourceNode>();
   const chordVoices = new Set<{ source: AudioBufferSourceNode; gain: GainNode; end: number }>();
 
@@ -45,12 +51,15 @@ export function createWebEngine(emit: Emit) {
     const runId = sequence?.runId ?? 0;
     transportGeneration++;
     window.clearInterval(timer);
+    drumBus?.gain.setTargetAtTime(0, ctx?.currentTime ?? 0, 0.003);
+    drumQueue = []; drumEnabled = false;
+    drumVoices.clear();
     sequenceBus?.gain.setTargetAtTime(0, ctx?.currentTime ?? 0, 0.003);
     master?.gain.setTargetAtTime(0, ctx?.currentTime ?? 0, 0.003);
     for (const source of scheduled) { try { source.stop((ctx?.currentTime ?? 0) + 0.02); } catch {} }
     scheduled.clear();
     chordVoices.clear();
-    sequenceBus = null; sequence = null; settings = null;
+    drumBus = null; sequenceBus = null; sequence = null; settings = null;
     if (!silent) emit({ type: "sequenceState", running: false, runId });
     if (!silent) emit({ type: "metronomeState", running: false, deviceId: null });
   }
@@ -130,6 +139,44 @@ export function createWebEngine(emit: Emit) {
     bankSound = sound;
   }
 
+  function buildDrums() {
+    if (!ctx || drumBanks.size) return;
+    DRUM_INSTRUMENTS.forEach((instrument, i) => {
+      const data = synthesizeDrum(instrument, ctx!.sampleRate);
+      const buffer = ctx!.createBuffer(1, data.length, ctx!.sampleRate);
+      buffer.copyToChannel(data as Float32Array<ArrayBuffer>, 0); drumBanks.set(i, buffer);
+    });
+  }
+  function scheduleDrums() {
+    if (!ctx || !sequence || !drumBus) return;
+    while (drumQueue.length && drumQueue[0]!.when <= ctx.currentTime + LOOKAHEAD_S) {
+      const point = drumQueue.shift()!;
+      if (point.step === 0) sequence.drumPattern = [...sequence.drums.pattern];
+      if (drumEnabled !== sequence.drums.enabled) {
+        drumEnabled = sequence.drums.enabled;
+        drumBus.gain.setTargetAtTime(drumEnabled ? sequence.drums.volume : 0, Math.max(ctx.currentTime, point.when), 0.003);
+      }
+      if (!drumEnabled) continue;
+      const mask = sequence.drumPattern[point.step]!;
+      const release = (instrument: number) => {
+        const old = drumVoices.get(instrument);
+        if (old && old.end > point.when) {
+          old.gain.gain.cancelScheduledValues(point.when); old.gain.gain.setValueAtTime(1, point.when);
+          old.gain.gain.linearRampToValueAtTime(0, point.when + .002); old.source.stop(point.when + .002); old.end = point.when + .002;
+        }
+      };
+      if (mask & 4) release(3);
+      for (let i = 0; i < 5; i++) if (mask & (1 << i)) {
+        release(i);
+        const bus = drumBus, gain = ctx.createGain(); gain.connect(bus);
+        const voice = scheduleSource(drumBanks.get(i)!, gain, point.when);
+        const entry = { source: voice, gain, end: point.when + drumBanks.get(i)!.duration }; drumVoices.set(i, entry);
+        const ended = voice.onended;
+        voice.onended = (event) => { if (drumVoices.get(i) === entry) drumVoices.delete(i); gain.disconnect(); ended?.call(voice, event); if (bus !== drumBus) bus.disconnect(); };
+      }
+    }
+  }
+
   const per = (s: MetronomeSettings) => 60 / (s.bpm * s.subdivision);
 
   function schedule() {
@@ -151,9 +198,11 @@ export function createWebEngine(emit: Emit) {
       const kind = sub > 0 ? "subdivision" : accent ? "accent" : "beat";
       scheduleSource(banks.get(kind)!, master, when);
       if (sequence && sub === 0) {
-        const state = sequenceAtBeat(sequence.steps, sequence.beat++)!;
-        const step = sequence.steps[state.step]!;
-        if (state.beatsLeft === step.beats) {
+        const quarter = sequence.beat++;
+        for (let j = 0; j < 4; j++) drumQueue.push({ when: when + j * 60 / s.bpm / 4, step: (quarter % 4) * 4 + j });
+        const state = sequenceAtBeat(sequence.steps, quarter) ?? { step: 0, beatsLeft: 4 - quarter % 4 };
+        const step = sequence.steps[state.step];
+        if (step && state.beatsLeft === step.beats) {
           for (const old of chordVoices) {
             if (old.end > when) {
               old.gain.gain.cancelScheduledValues(when);
@@ -184,6 +233,7 @@ export function createWebEngine(emit: Emit) {
       lastTickTime = when;
       nextIndex++;
     }
+    scheduleDrums();
   }
 
   async function listDevices(): Promise<DeviceInfo[]> {
@@ -230,26 +280,38 @@ export function createWebEngine(emit: Emit) {
     devices: listDevices,
     stopPreview,
     stopSequence: stopTransport,
-    async startSequence(deviceId: string | null, s: MetronomeSettings, steps: AudioSequenceStep[], volume: number, click: boolean, runId: number) {
-      if (!validAudioSequence(steps, volume)) throw new Error("Sequência inválida.");
+    async startSequence(deviceId: string | null, s: MetronomeSettings, steps: AudioSequenceStep[], volume: number, click: boolean, runId: number, drums: AudioDrums = compileDrums(defaultDrums)) {
+      if (!validAudioDrums(drums) || !validAudioSequence(steps, volume, drums.enabled)) throw new Error("Sequência inválida.");
       if (!Number.isFinite(s.bpm) || s.bpm < 20 || s.bpm > 400 || !Number.isInteger(s.subdivision) || s.subdivision < 1 || s.subdivision > 4 || !Number.isInteger(s.beatsPerBar) || s.beatsPerBar < 1 || s.beatsPerBar > 16 || !Number.isFinite(s.volume) || s.volume < 0 || s.volume > 1) throw new Error("Configuração do transporte inválida.");
+      if (drums.enabled && s.beatsPerBar !== 4) throw new Error("A bateria precisa de compasso 4/4.");
       stopTransport(true); stopPreview();
       const generation = transportGeneration;
       const c = await ensureCtx(rawId(deviceId));
       if (generation !== transportGeneration) return;
       const buffers = steps.map((step) => {
-        const data = synthesizeChordPreview(step.frequencies, c.sampleRate, volume);
+        const data = synthesizeChordPreview(step.frequencies, c.sampleRate, 1);
         const buffer = c.createBuffer(1, data.length, c.sampleRate);
         buffer.copyToChannel(data as Float32Array<ArrayBuffer>, 0); return buffer;
       });
-      buildBanks(s.sound); settings = s;
-      sequenceBus = c.createGain(); sequenceBus.connect(output!);
-      sequence = { steps, buffers, beat: 0, click, runId };
+      buildBanks(s.sound); buildDrums(); settings = s;
+      sequenceBus = c.createGain(); sequenceBus.gain.setValueAtTime(volume, c.currentTime); sequenceBus.connect(output!);
+      drumBus = c.createGain(); drumBus.gain.setValueAtTime(0, c.currentTime); drumBus.connect(output!);
+      sequence = { steps, buffers, beat: 0, click, runId, drums, drumPattern: [...drums.pattern] };
       master!.gain.setValueAtTime(click ? s.volume : 0, c.currentTime);
       anchorTime = c.currentTime + 0.05; anchorIndex = 0; nextIndex = 0;
       timer = window.setInterval(schedule, TICK_MS);
       emit({ type: "metronomeState", running: true, deviceId });
       emit({ type: "sequenceState", running: true, runId }); schedule();
+    },
+    updateSequenceMixer(runId: number, mixer: SequenceMixer) {
+      if (!validSequenceMixer(mixer)) throw new Error("Volumes ou bateria inválidos.");
+      if (!ctx || !sequence || sequence.runId !== runId) return;
+      if (mixer.drums.enabled && settings?.beatsPerBar !== 4) throw new Error("A bateria precisa de compasso 4/4.");
+      sequence.click = mixer.click; sequence.drums = mixer.drums;
+      sequenceBus?.gain.setTargetAtTime(mixer.volume, ctx.currentTime, 0.01);
+      master?.gain.setTargetAtTime(mixer.click ? settings!.volume : 0, ctx.currentTime, 0.01);
+      if (!mixer.drums.enabled) { drumEnabled = false; drumBus?.gain.setTargetAtTime(0, ctx.currentTime, 0.003); }
+      else if (drumEnabled) drumBus?.gain.setTargetAtTime(mixer.drums.volume, ctx.currentTime, 0.01);
     },
     async previewChord(deviceId: string | null, frequencies: number[], volume: number) {
       stopPreview();
@@ -290,9 +352,14 @@ export function createWebEngine(emit: Emit) {
     },
     updateMetronome(s: MetronomeSettings) {
       if (!ctx || !settings) return;
+      if (sequence?.drums.enabled && s.beatsPerBar !== 4) { emit({ type: "error", code: "streamFailed", direction: "output", message: "A bateria precisa de compasso 4/4." }); stopTransport(); return; }
       const tempoChanged = s.bpm !== settings.bpm || s.subdivision !== settings.subdivision;
       if (tempoChanged) {
         // Reancora no último clique: o próximo vem no tempo novo.
+        if (sequence && s.bpm !== settings.bpm) {
+          const anchor = lastTickTime;
+          drumQueue = drumQueue.map((point) => ({ ...point, when: anchor + (point.when - anchor) * settings!.bpm / s.bpm }));
+        }
         anchorIndex = nextIndex;
         anchorTime = Math.max(lastTickTime + per(s), ctx.currentTime + 0.01);
       }

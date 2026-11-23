@@ -1,7 +1,7 @@
 // Ponte entre a interface e o motor de áudio em Rust.
 // Fora do Tauri (webapp) usa o motor em Web Audio de web-engine.ts.
 
-import { rankDevices, type AudioSequenceStep, type DeviceInfo, type EngineEvent, type MetronomeSettings, type Recommendation } from "@gx/core";
+import { compileDrums, defaultDrums, type AudioDrums, type SequenceMixer, rankDevices, type AudioSequenceStep, type DeviceInfo, type EngineEvent, type MetronomeSettings, type Recommendation } from "@gx/core";
 import { createWebEngine } from "./web-engine";
 
 export const isNative = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -43,10 +43,14 @@ const web = () => (webEngine ??= createWebEngine(emit));
 
 // ---------- API pública ----------
 export const engine = {
-  async startSequence(deviceId: string | null, settings: MetronomeSettings, steps: AudioSequenceStep[], volume: number, click: boolean, runId: number) {
+  async startSequence(deviceId: string | null, settings: MetronomeSettings, steps: AudioSequenceStep[], volume: number, click: boolean, runId: number, drums: AudioDrums = compileDrums(defaultDrums)) {
     const request = ++sequenceRequest;
-    if (isNative) { await hookNative(); if (request !== sequenceRequest) return; return invoke("sequence_start", { deviceId, settings, steps, volume, click, runId }); }
-    return web().startSequence(deviceId, settings, steps, volume, click, runId);
+    if (isNative) { await hookNative(); if (request !== sequenceRequest) return; return invoke("sequence_start", { deviceId, settings, steps, volume, click, runId, drums }); }
+    return web().startSequence(deviceId, settings, steps, volume, click, runId, drums);
+  },
+  async updateSequenceMixer(runId: number, mixer: SequenceMixer) {
+    if (isNative) return invoke("sequence_mixer", { runId, mixer });
+    return web().updateSequenceMixer(runId, mixer);
   },
   async stopSequence() {
     sequenceRequest++;

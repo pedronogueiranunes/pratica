@@ -2340,6 +2340,16 @@ button.chord-tile[aria-pressed="true"] {
 .sequence-position { margin: 16px 0 0; }
 .sequence-empty { margin: 32px 0; max-width: 60ch; }
 .sequence-panel .btn.primary { color: #161616; }
+.sequence-saved { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+.sequence-saved label { display: flex; flex: 1 1 220px; max-width: 360px; flex-direction: column; gap: 6px; color: var(--fg-2); font-size: 14px; }
+.sequence-saved input, .sequence-saved select { width: 100%; min-height: 44px; color: var(--fg); }
+.sequence-saved .btn { min-height: 44px; }
+.sequence-drums { border-top: 1px solid var(--line); margin-top: 24px; padding-top: 20px; }
+.sequence-drums h3 { margin: 0; }
+.sequence-drums .sequence-controls { margin-top: 12px; }
+.sequence-drums select { max-width: 100%; min-height: 44px; }
+.drum-panel { margin-top: 24px; }
+.exercise-practice .drum-panel { margin-top: 0; }
 @media (max-width: 720px) {
   .seg button { height: 40px; min-width: 36px; }
   .btn,

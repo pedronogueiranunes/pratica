@@ -6,6 +6,7 @@ import {
 import { engine, onEngine } from "../lib/engine";
 import { ChordStaff } from "../components/ChordStaff";
 import { ChordSequence } from "./ChordSequence";
+import { useSequenceDraft } from "../lib/sequence-draft";
 import { ChordCard, ChordDiagram } from "../components/ChordDiagram";
 import { useMetronome } from "../lib/metronome";
 import { usePractice } from "../lib/practice-state";
@@ -18,8 +19,6 @@ const FAMILIES: { id: Family; label: string }[] = [
   { id: "todos", label: "Todos" }, { id: "maior", label: "Maiores" }, { id: "menor", label: "Menores" }, { id: "sétima", label: "Com sétima" }, { id: "outros", label: "Outros" },
 ];
 const TRAINER_KEY = "pratica.chords.trainer";
-// Rascunho só em memória: sobrevive à navegação, sem simular persistência.
-let sessionSequenceSteps: ChordSequenceStep[] = [];
 export const TRAINER_EXERCISE = "f1-troca-acordes";
 
 function loadTrainer(): { chords: string[]; beatsPerChord: number } {
@@ -36,8 +35,9 @@ export function presetTrainer(chords: string[]) {
 }
 
 export function Chords() {
-  const [steps, setStepsState] = useState<ChordSequenceStep[]>(sessionSequenceSteps);
-  const setSteps = (next: ChordSequenceStep[]) => { sessionSequenceSteps = next; setStepsState(next); };
+  const { draft, setDraft, error: sequenceLoadError } = useSequenceDraft();
+  const steps = draft.steps;
+  const setSteps = (next: ChordSequenceStep[]) => setDraft((current) => ({ ...current, steps: next }));
   const [added, setAdded] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>(() => { try { const saved = localStorage.getItem("pratica.chords.tab"); return saved === "troca" || saved === "sequencia" ? saved : "biblioteca"; } catch { return "biblioteca"; } });
   const choose = (t: Tab) => { setTab(t); try { localStorage.setItem("pratica.chords.tab", t); } catch {} };
@@ -50,7 +50,8 @@ export function Chords() {
         <button aria-pressed={tab === "sequencia"} onClick={() => choose("sequencia")}>Sequência{steps.length ? ` (${steps.length})` : ""}</button>
       </div>
     </header>
-    {tab === "biblioteca" ? <Library onTrain={(name) => { presetTrainer([name]); choose("troca"); }} onAdd={(diagram) => { if (steps.length >= MAX_SEQUENCE_STEPS) return; setSteps([...steps, { id: crypto.randomUUID(), diagram: structuredClone(diagram), beats: 4 }]); setAdded(`${diagram.name} adicionado à sequência.`); }} canAdd={steps.length < MAX_SEQUENCE_STEPS} added={added} /> : tab === "sequencia" ? <ChordSequence steps={steps} setSteps={setSteps} onChoose={() => { setAdded(null); choose("biblioteca"); }} /> : <Trainer />}
+    {sequenceLoadError && <p className="error" role="alert">{sequenceLoadError}</p>}
+    {tab === "biblioteca" ? <Library onTrain={(name) => { presetTrainer([name]); choose("troca"); }} onAdd={(diagram) => { if (steps.length >= MAX_SEQUENCE_STEPS) return; setSteps([...steps, { id: crypto.randomUUID(), diagram: structuredClone(diagram), beats: 4 }]); setAdded(`${diagram.name} adicionado à sequência.`); }} canAdd={steps.length < MAX_SEQUENCE_STEPS} added={added} /> : tab === "sequencia" ? <ChordSequence draft={draft} setDraft={setDraft} onChoose={() => { setAdded(null); choose("biblioteca"); }} /> : <Trainer />}
   </div>;
 }
 

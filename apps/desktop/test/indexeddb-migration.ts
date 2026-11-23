@@ -23,20 +23,25 @@ export async function indexedDbMigration() {
     const before = await backend.request("listLogs") as unknown[];
     if (before.length !== 1) throw new Error("Migração perdeu prática v2.");
     await backend.close(); backend = undefined;
-    db = await req(indexedDB.open(name, 3));
+    db = await req(indexedDB.open(name, 4));
     tx = db.transaction(["events", "deferred_events"], "readwrite"); done = commit(tx);
     const event = { version: 1, id: "replay", deviceId: "older-device", at: "2026-01-02T00:00:00Z", type: "playlist.saved", data: { id: "replayed", name: "Treino", songIds: [] } };
     tx.objectStore("events").put({ ...event, atMs: Date.parse(event.at) });
     tx.objectStore("deferred_events").put({ eventId: event.id });
+    const sequence = { version: 1, id: "sequence-replay", deviceId: "older-device", at: event.at, type: "sequence.saved", data: { id: "seq-replayed", name: "Bateria recuperada", steps: [], bpm: 90, volume: .5, click: false, clickVolume: .4, drums: { enabled: true, pattern: "rock", volume: .3 }, updatedAt: event.at } };
+    tx.objectStore("events").put({ ...sequence, atMs: Date.parse(sequence.at) });
+    tx.objectStore("deferred_events").put({ eventId: sequence.id });
     await done; db.close();
     backend = new IndexedDbBackend(name);
     const lists = await backend.request("listPlaylists") as { id: string }[];
     if (lists[0]?.id !== "replayed") throw new Error("Evento conhecido não foi reprojetado ao abrir.");
+    const sequences = await backend.request("listSequences") as { id: string }[];
+    if (sequences[0]?.id !== "seq-replayed") throw new Error("Sequência pendente não foi reprojetada.");
     await backend.close(); backend = undefined;
-    db = await req(indexedDB.open(name, 3));
+    db = await req(indexedDB.open(name, 4));
     const count = await req(db.transaction("deferred_events").objectStore("deferred_events").count());
     db.close();
     if (count !== 0) throw new Error("Evento projetado continuou pendente.");
-    return "migração IndexedDB v2→v3 e reprojeção ao abrir";
+    return "migração IndexedDB v2→v4 e reprojeção ao abrir";
   } finally { await backend?.close(); await req(indexedDB.deleteDatabase(name)); }
 }

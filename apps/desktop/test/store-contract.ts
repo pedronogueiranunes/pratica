@@ -1,4 +1,4 @@
-import type { PracticeEvent, StoreBackend } from "@gx/core";
+import { shapesFor, defaultDrums, type PracticeEvent, type StoreBackend } from "@gx/core";
 import { PracticeRepository } from "../src/lib/storage/repository";
 
 type Open = () => Promise<StoreBackend>;
@@ -103,6 +103,16 @@ export async function storeContract(open: Open) {
   await rejects(() => backend.request("apply", { events: [{ ...future, id: "rollback-future" }, event("invalid-known", "2191-01-01T00:00:00Z", "playlist.saved", { id: "bad", name: "", songIds: [] })] }), "dados conhecidos inválidos rejeitam lote");
   equal((await repo.events()).length, beforeInvalid, "lote inválido não grava evento futuro");
   checks.push("eventos futuros preservados e conhecidos validados");
+  const sequence = await repo.saveSequence({ id: "sequence-one", name: "Estudo", steps: [{ id: "step-one", diagram: shapesFor("C/E").shapes[0]!, beats: 2 }], bpm: 80, volume: .5, click: true, clickVolume: .4, drums: { ...defaultDrums, enabled: true } });
+  equal((await repo.listSequences())[0]?.steps, sequence.steps, "forma exata persistida");
+  await repo.mergeEvents([event("zz-sequence-new", sequence.updatedAt, "sequence.saved", { ...sequence, name: "Nova ordem" }), event("00-sequence-old", sequence.updatedAt, "sequence.saved", sequence)]);
+  equal((await repo.listSequences())[0]?.name, "Nova ordem", "LWW com desempate estável");
+  checks.push("sequência, mixer e fusão estável");
+  const malformed = { ...sequence, steps: [{ ...sequence.steps[0], diagram: { name: "C", notes: [{ string: 1, fret: 25 }] } }] };
+  await rejects(() => backend.request("apply", { events: [event("bad-sequence", sequence.updatedAt, "sequence.saved", malformed)] }), "backend recusa forma inválida");
+  const temporary = await repo.saveSequence({ ...sequence, id: "sequence-temporary" });
+  await repo.saveSequence({ ...temporary, deleted: true });
+  equal((await repo.listSequences()).length, 1, "tombstone oculta sequência"); checks.push("validação e exclusão por evento de sequência");
   const close = (backend as StoreBackend & { close?: () => Promise<void> }).close;
   if (close) await close.call(backend);
   backend = await open(); repo = new PracticeRepository(backend, "device-a");
@@ -112,9 +122,11 @@ export async function storeContract(open: Open) {
   equal((await repo.getSettings()).routineSource, "custom", "rotina escolhida após reabrir");
   equal((await repo.getRoutine(routine.id))?.name, "Nova", "rotina após reabrir");
   equal((await repo.listSongs()).length, 1, "música após reabrir");
+  equal((await repo.listSequences())[0]?.name, "Nova ordem", "sequência após reabrir");
   equal((await repo.events()).find((e) => e.id === future.id), future, "evento futuro após reabrir");
   equal((await repo.chartRevisions(r1.chartId)).length, 3, "cifra após reabrir"); checks.push("reabertura persistente");
   const pack = await repo.exportMusic();
+  assert(pack.events.some((e) => e.type === "sequence.saved"), "pacote leva sequências");
   equal(pack.events.some((e) => e.type === "practice.added" || e.type === "settings.changed"), false, "exporta somente repertório");
   const beforeImport = (await repo.events()).length;
   await repo.importMusic(pack); await repo.importMusic(pack);

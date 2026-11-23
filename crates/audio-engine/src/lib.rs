@@ -20,5 +20,8 @@ pub use pitch::{note_from_frequency, NoteReading, PitchDetector};
 pub mod amp;
 pub mod preview;
 pub mod sequence;
+pub mod drums;
+#[cfg(test)]
+mod realtime_test;
 #[cfg(feature = "io")]
 pub mod amp_io;

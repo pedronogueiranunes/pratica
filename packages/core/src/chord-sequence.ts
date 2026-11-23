@@ -1,6 +1,7 @@
 import type { Diagram } from "./fretboard";
 import { chordVoicing, validPreviewFrequencies } from "./chord-voicing";
 import { BEAT_OPTIONS } from "./chord-trainer";
+import { validAudioDrums, type AudioDrums } from "./drums";
 
 export const MAX_SEQUENCE_STEPS = 16;
 export interface ChordSequenceStep { id: string; diagram: Diagram; beats: number }
@@ -18,8 +19,10 @@ export function compileChordSequence(steps: readonly ChordSequenceStep[], a4 = 4
     return { frequencies: v.frequencies, beats: step.beats };
   });
 }
-export function validAudioSequence(steps: readonly AudioSequenceStep[], volume: number): boolean {
-  return Number.isFinite(volume) && volume >= 0 && volume <= 1 && steps.length > 0 && steps.length <= MAX_SEQUENCE_STEPS
+export interface SequenceMixer { volume: number; click: boolean; drums: AudioDrums }
+export function validSequenceMixer(m: SequenceMixer): boolean { return !!m && typeof m.click === "boolean" && Number.isFinite(m.volume) && m.volume >= 0 && m.volume <= 1 && validAudioDrums(m.drums); }
+export function validAudioSequence(steps: readonly AudioSequenceStep[], volume: number, allowEmpty = false): boolean {
+  return Number.isFinite(volume) && volume >= 0 && volume <= 1 && (allowEmpty || steps.length > 0) && steps.length <= MAX_SEQUENCE_STEPS
     && steps.every((step) => BEAT_OPTIONS.includes(step.beats as 4) && validPreviewFrequencies(step.frequencies));
 }
 /** Estado visual e testes de fronteira; o motor avança pelo relógio de áudio. */

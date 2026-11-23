@@ -1,3 +1,4 @@
+import type { SequenceStore } from "./saved-sequence";
 import type { PracticeRecord, Settings } from "./types";
 import type { RoutineBlock } from "./routine";
 import type { ChartImport, ChartRevision, Playlist, Song } from "./songs";
@@ -5,7 +6,7 @@ import type { ChartImport, ChartRevision, Playlist, Song } from "./songs";
 export interface LogRange { from?: string; to?: string; exerciseId?: string }
 export interface SavedRoutine { id: string; name: string; blocks: RoutineBlock[] }
 export type SettingsPatch = { [K in keyof Settings]?: Settings[K] extends object ? Partial<Settings[K]> : Settings[K] };
-export interface PracticeStore {
+export interface PracticeStore extends SequenceStore {
   addLog(log: PracticeRecord): Promise<void>;
   listLogs(range?: LogRange): Promise<PracticeRecord[]>;
   countByExercise(): Promise<Record<string, number>>;
@@ -29,7 +30,7 @@ export interface PracticeEvent extends StoredEvent {
   id: string;
   deviceId: string;
   at: string;
-  type: "practice.added" | "settings.changed" | "routine.saved" | "song.saved" | "playlist.saved" | "chart.revised";
+  type: "practice.added" | "settings.changed" | "routine.saved" | "song.saved" | "playlist.saved" | "chart.revised" | "sequence.saved";
   data: unknown;
 }
 export interface SettingChange { key: string; value: unknown }

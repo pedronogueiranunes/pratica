@@ -38,7 +38,7 @@ impl Store {
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .map_err(err)?;
-        if version > 2 {
+        if version > 3 {
             return Err("Este banco foi criado por uma versão mais nova do Prática.".into());
         }
         let store = Self { connection };
@@ -72,6 +72,9 @@ impl Store {
           CREATE TABLE IF NOT EXISTS chart_revisions (revision TEXT PRIMARY KEY,chart_id TEXT NOT NULL,song_id TEXT NOT NULL,created_at_ms INTEGER NOT NULL,value_json TEXT NOT NULL);
           CREATE INDEX IF NOT EXISTS chart_revisions_chart ON chart_revisions(chart_id);
           PRAGMA user_version=2; COMMIT;").map_err(err)?;
+        }
+        if version < 3 {
+            store.connection.execute_batch("BEGIN IMMEDIATE; CREATE TABLE IF NOT EXISTS sequences (id TEXT PRIMARY KEY,value_json TEXT NOT NULL,updated_at_ms INTEGER NOT NULL,event_id TEXT NOT NULL); PRAGMA user_version=3; COMMIT;").map_err(err)?;
         }
         store.replay_deferred()?;
         Ok(store)
@@ -111,7 +114,7 @@ impl Store {
                 let events = args["events"].as_array().ok_or("Eventos inválidos")?;
                 for e in events {
                     validate_event(e)?;
-                    if args["relayMusic"] == true && !["song.", "playlist.", "chart."].iter().any(|prefix| string(e, "type").is_ok_and(|t| t.starts_with(prefix))) {
+                    if args["relayMusic"] == true && !["song.", "playlist.", "chart.", "sequence."].iter().any(|prefix| string(e, "type").is_ok_and(|t| t.starts_with(prefix))) {
                         return Err("O pacote só pode conter eventos de repertório.".into());
                     }
                 }
@@ -161,6 +164,7 @@ impl Store {
                 for row in rows { let (key,v) = row.map_err(err)?; out.push(json!({"key":key,"value":parse(v)?})); }
                 Ok(json!(out))
             }
+            "listSequences" => self.values("SELECT value_json FROM sequences ORDER BY id",[]),
             "listSongs" => self.values("SELECT value_json FROM songs ORDER BY id",[]),
             "listPlaylists" => self.values("SELECT value_json FROM playlists ORDER BY id",[]),
             "chartRevisions" => self.values("SELECT value_json FROM chart_revisions WHERE chart_id=?1 ORDER BY created_at_ms,revision",[string(args,"chartId")?]),
@@ -216,8 +220,8 @@ fn project(tx: &rusqlite::Transaction, e: &Value) -> StoreResult<bool> {
                 tx.execute("INSERT INTO settings VALUES (?1,?2,?3,?4) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at_ms=excluded.updated_at_ms,event_id=excluded.event_id WHERE excluded.updated_at_ms>settings.updated_at_ms OR (excluded.updated_at_ms=settings.updated_at_ms AND excluded.event_id>settings.event_id)",params![string(change,"key")?,serialize(&change["value"])?,at,id]).map_err(err)?;
             }
         }
-        "song.saved" | "playlist.saved" => {
-            let table = if kind == "song.saved" { "songs" } else { "playlists" };
+        "song.saved" | "playlist.saved" | "sequence.saved" => {
+            let table = if kind == "song.saved" { "songs" } else if kind == "sequence.saved" { "sequences" } else { "playlists" };
             tx.execute(&format!("INSERT INTO {table} VALUES (?1,?2,?3,?4) ON CONFLICT(id) DO UPDATE SET value_json=excluded.value_json,updated_at_ms=excluded.updated_at_ms,event_id=excluded.event_id WHERE excluded.updated_at_ms>{table}.updated_at_ms OR (excluded.updated_at_ms={table}.updated_at_ms AND excluded.event_id>{table}.event_id)"),params![string(data,"id")?,serialize(data)?,at,id]).map_err(err)?;
         }
         "chart.revised" => {
@@ -232,6 +236,29 @@ fn project(tx: &rusqlite::Transaction, e: &Value) -> StoreResult<bool> {
         _ => return Ok(false),
     }
     Ok(true)
+}
+
+fn validate_sequence(v: &Value) -> StoreResult<()> {
+    let id = string(v,"id")?; let name = string(v,"name")?;
+    if id.trim().is_empty() || id.len()>128 || name.trim().is_empty() || name.chars().count()>80 { return Err("Nome ou ID de sequência inválido.".into()); }
+    ms(string(v,"updatedAt")?)?; opt_bool(v,"deleted")?;
+    let level = |x: &Value| x.as_f64().is_some_and(|n| n.is_finite() && (0.0..=1.0).contains(&n));
+    if !v["bpm"].as_f64().is_some_and(|n| n.is_finite() && (20.0..=400.0).contains(&n)) || !level(&v["volume"]) || !level(&v["clickVolume"]) || !v["click"].is_boolean() || !level(&v["drums"]["volume"]) || !v["drums"]["enabled"].is_boolean() || !["rock","reggae","indie","metal","ska","afrobeat","simple4","simple8"].contains(&string(&v["drums"],"pattern")?) { return Err("Configuração da sequência inválida.".into()); }
+    let steps = v["steps"].as_array().filter(|a| a.len()<=16).ok_or("Sequência grande demais.")?;
+    let mut ids=std::collections::HashSet::new();
+    for step in steps {
+        let id = string(step,"id")?; if id.trim().is_empty() || !ids.insert(id) || !step["beats"].as_u64().is_some_and(|n| [1,2,4,8].contains(&n)) { return Err("Bloco inválido.".into()); }
+        let d=&step["diagram"]; if string(d,"name")?.chars().count()>64 { return Err("Nome de acorde inválido.".into()); }
+        let notes=d["notes"].as_array().filter(|a| !a.is_empty() && a.len()<=6).ok_or("Forma inválida.")?;
+        let mut strings=std::collections::HashSet::new();
+        for n in notes {
+            let string=n["string"].as_u64().filter(|n| (1..=6).contains(n)).ok_or("Corda inválida.")?;
+            if !strings.insert(string) || !n["fret"].as_u64().is_some_and(|n| n<=24) || n.get("finger").is_some_and(|x| !x.as_u64().is_some_and(|n| n<=4)) || n.get("root").is_some_and(|x| !x.is_boolean()) { return Err("Nota inválida.".into()); }
+        }
+        if let Some(muted)=d.get("muted") { let muted=muted.as_array().filter(|a| a.len()<=6).ok_or("Cordas inválidas.")?; for m in muted { if !m.as_u64().is_some_and(|n| (1..=6).contains(&n) && !strings.contains(&n)) { return Err("Corda abafada inválida.".into()); } } }
+        if let Some(b)=d.get("barre") { if !b["fret"].as_u64().is_some_and(|n| (1..=24).contains(&n)) || !b["from"].as_u64().is_some_and(|n| (1..=6).contains(&n)) || !b["to"].as_u64().is_some_and(|n| n>=1 && n<=b["from"].as_u64().unwrap_or(0)) || !b["finger"].as_u64().is_some_and(|n| (1..=4).contains(&n)) { return Err("Pestana inválida.".into()); } }
+    }
+    Ok(())
 }
 
 fn http_url(v: &Value) -> bool {
@@ -355,6 +382,7 @@ pub fn validate_event(e: &Value) -> StoreResult<()> {
                 validate_setting(c)?;
             }
         }
+        "sequence.saved" => { validate_sequence(data)?; if data["updatedAt"] != e["at"] { return Err("Data da sequência incompatível com o evento.".into()); } }
         "song.saved" => validate_song(data)?,
         "playlist.saved" => {
             string(data, "id")?;
@@ -447,13 +475,31 @@ pub mod sync;
 mod tests {
     use super::*;
     #[test]
+    fn migra_v2_para_v3_e_recupera_sequencia_adiada() {
+        let path = std::env::temp_dir().join(format!("pratica-sequence-migration-{}.sqlite3", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        {
+            let mut store = Store::open(&path).unwrap();
+            let at = "2026-11-23T12:00:00Z";
+            let sequence = json!({"id":"seq1","name":"Teste original","steps":[],"bpm":90,"volume":0.5,"click":false,"clickVolume":0.4,"drums":{"enabled":true,"pattern":"rock","volume":0.3},"updatedAt":at});
+            store.request("apply", &json!({"events":[{"version":1,"id":"seq-event","deviceId":"outro","at":at,"type":"sequence.saved","data":sequence}]})).unwrap();
+            store.connection.execute_batch("DROP TABLE sequences; INSERT INTO deferred_events VALUES ('seq-event'); PRAGMA user_version=2;").unwrap();
+        }
+        let mut store = Store::open(&path).unwrap();
+        assert_eq!(store.request("listSequences", &json!({})).unwrap()[0]["id"], "seq1");
+        let count: i64 = store.connection.query_row("SELECT COUNT(*) FROM deferred_events", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 0);
+        drop(store);
+        for suffix in ["", "-wal", "-shm"] { let _ = std::fs::remove_file(format!("{}{suffix}", path.display())); }
+    }
+    #[test]
     fn migra_v1_para_v2_e_aplica_eventos_guardados_ao_reabrir() {
         let path = std::env::temp_dir().join(format!("pratica-deferred-{}.sqlite3", std::process::id()));
         let _ = std::fs::remove_file(&path);
         {
             let mut store = Store::open(&path).unwrap();
             let v: i64 = store.connection.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
-            assert_eq!(v, 2);
+            assert_eq!(v, 3);
             store.request("apply", &json!({"events":[{"version":1,"id":"e1","deviceId":"b","at":"2026-11-20T12:00:00Z","type":"practice.added","data":{"id":"l1","exerciseId":"f1-spider","at":"2026-11-20T12:00:00Z","bpm":60}}]})).unwrap();
             // Simula um app antigo que guardou o evento sem conhecer o tipo.
             store.connection.execute_batch("DELETE FROM practice_logs; INSERT INTO deferred_events VALUES ('e1');").unwrap();

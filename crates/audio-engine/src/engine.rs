@@ -5,7 +5,8 @@
 //! ring buffers sem lock (rtrb).
 
 use crate::click::ClickBank;
-use crate::sequence::{SequencePlan, SequencePlayer};
+use crate::sequence::{SequencePlan, SequencePlayer, SequenceMixer};
+use crate::drums::DrumPlayer;
 use crate::preview::{ChordPreview, PreviewPlan};
 use crate::latency::{Connection, DeviceInfo};
 use crate::metronome::{Metronome, MetronomeSettings, Tick};
@@ -74,6 +75,7 @@ pub enum ErrorCode {
 // Plano fixo via canal: evita alocar ou liberar a sequência na callback.
 #[allow(clippy::large_enum_variant)]
 enum Command {
+    SequenceMixer { run_id: u32, mixer: SequenceMixer },
     StartSequence { device_id: Option<String>, settings: MetronomeSettings, plan: SequencePlan },
     Preview { device_id: Option<String>, frequencies: Vec<f32>, volume: f32 },
     StopPreview,
@@ -91,6 +93,7 @@ enum Command {
 #[allow(clippy::large_enum_variant)]
 enum AudioCmd {
     Sequence(SequencePlan),
+    Mixer(u32, SequenceMixer),
     Start,
     Stop,
     Preview(PreviewPlan),
@@ -121,6 +124,7 @@ impl Drop for ThreadGuard {
 }
 
 impl EngineHandle {
+    pub fn sequence_mixer(&self, run_id: u32, mixer: SequenceMixer) { let _ = self.tx.send(Command::SequenceMixer { run_id, mixer }); }
     pub fn start_sequence(&self, device_id: Option<String>, settings: MetronomeSettings, plan: SequencePlan) {
         let _ = self.tx.send(Command::StartSequence { device_id, settings, plan });
     }
@@ -247,6 +251,7 @@ fn find_device(input: bool, id: Option<&str>) -> Option<cpal::Device> {
 
 struct MetronomeStream {
     sequence_run: u32,
+    drums_enabled: bool,
     running: bool,
     preview_until: Option<Instant>,
     _stream: cpal::Stream,
@@ -316,6 +321,15 @@ impl EngineThread {
 
     fn handle(&mut self, cmd: Command) {
         match cmd {
+            Command::SequenceMixer { run_id, mixer } => {
+                if let Some(m) = self.metronome.as_mut() {
+                    if m.running && m.sequence_run == run_id && mixer.valid() {
+                        if mixer.drums.enabled && m.settings.beats_per_bar != 4 { self.error(ErrorCode::StreamFailed, "A bateria precisa de compasso 4/4."); return; }
+                        if m.cmd.push(AudioCmd::Mixer(run_id, mixer)).is_err() { self.error(ErrorCode::StreamFailed, "Aguarde um instante antes de ajustar o som."); }
+                        else { m.drums_enabled = mixer.drums.enabled; }
+                    }
+                }
+            }
             Command::StartSequence { device_id, settings, plan } => {
                 if self.metronome.as_ref().is_some_and(|m| device_id.as_ref().is_some_and(|id| *id != m.device_id)) { self.metronome = None; }
                 if self.metronome.is_none() {
@@ -324,11 +338,13 @@ impl EngineThread {
                         Err((code, message)) => { self.error(code, message); (self.emit)(EngineEvent::SequenceState { running: false, run_id: plan.run_id }); return; }
                     }
                 }
+                if let Some(m) = self.metronome.as_mut() { m.drums_enabled = plan.drums.enabled; }
                 self.handle(Command::UpdateMetronome(settings));
                 if let Some(m) = self.metronome.as_mut() {
                     if m.cmd.push(AudioCmd::Sequence(plan)).is_ok() {
                         m.running = true;
                         m.sequence_run = plan.run_id;
+                        m.drums_enabled = plan.drums.enabled;
                         (self.emit)(EngineEvent::MetronomeState { running: true, device_id: Some(m.device_id.clone()) });
                         (self.emit)(EngineEvent::SequenceState { running: true, run_id: plan.run_id });
                     } else {
@@ -382,6 +398,9 @@ impl EngineThread {
             }
             Command::UpdateMetronome(settings) => {
                 let settings = settings.sanitized();
+                if self.metronome.as_ref().is_some_and(|m| m.running && m.drums_enabled && settings.beats_per_bar != 4) {
+                    self.error(ErrorCode::StreamFailed, "A bateria precisa de compasso 4/4."); self.handle(Command::StopMetronome); return;
+                }
                 if let Some(m) = self.metronome.as_mut() {
                     if settings.sound != m.settings.sound {
                         let bank = Box::new(ClickBank::new(settings.sound, m.sample_rate));
@@ -582,6 +601,10 @@ impl EngineThread {
         let mut metro = Metronome::new(sample_rate, settings);
         if running { metro.start(); }
         let ctx = OutputCtx {
+            drums: DrumPlayer::new(sample_rate),
+            sequence_preview: ChordPreview::new(sample_rate),
+            sequence_gain: 0.5,
+            sequence_target: 0.5,
             sequence: SequencePlayer::default(),
             sequence_beats: sequence_tx,
             click_gain: 1.0,
@@ -609,6 +632,7 @@ impl EngineThread {
 
         Ok(MetronomeStream {
             sequence_run: 0,
+            drums_enabled: false,
             running,
             preview_until: None,
             _stream: stream,
@@ -676,6 +700,10 @@ impl EngineThread {
 }
 
 struct OutputCtx {
+    drums: DrumPlayer,
+    sequence_preview: ChordPreview,
+    sequence_gain: f32,
+    sequence_target: f32,
     sequence: SequencePlayer,
     sequence_beats: rtrb::Producer<(usize, u32, u32, f32)>,
     click_gain: f32,
@@ -713,9 +741,10 @@ where
                 if ctx.pending_bank.is_some() { break; }
                 let Ok(cmd) = ctx.cmd.pop() else { break; };
                 match cmd {
-                    AudioCmd::Sequence(plan) => { ctx.preview.stop(); ctx.click_gain = if plan.click { 1.0 } else { 0.0 }; ctx.sequence.start(plan); ctx.click_target = ctx.sequence.click_gain(); ctx.metro.start(); }
-                    AudioCmd::Start => { ctx.sequence.stop(); ctx.click_target = 1.0; ctx.metro.start(); }
-                    AudioCmd::Stop => { if ctx.sequence.is_running() { ctx.sequence.stop(); ctx.preview.stop(); } ctx.metro.stop(); }
+                    AudioCmd::Sequence(plan) => { ctx.preview.stop(); ctx.sequence_preview.stop(); ctx.drums.start(plan.drums); ctx.sequence_gain = plan.volume; ctx.sequence_target = plan.volume; ctx.click_gain = if plan.click { 1.0 } else { 0.0 }; ctx.sequence.start(plan); ctx.click_target = ctx.sequence.click_gain(); ctx.metro.start(); }
+                    AudioCmd::Mixer(run_id, mixer) => { if ctx.sequence.is_running() && ctx.sequence.run_id() == run_id { ctx.drums.update(mixer.drums); ctx.sequence_target = mixer.volume; ctx.click_target = if mixer.click { 1.0 } else { 0.0 }; } }
+                    AudioCmd::Start => { ctx.sequence.stop(); ctx.sequence_preview.stop(); ctx.drums.stop(); ctx.click_target = 1.0; ctx.metro.start(); }
+                    AudioCmd::Stop => { if ctx.sequence.is_running() { ctx.sequence.stop(); ctx.sequence_preview.stop(); ctx.drums.stop(); } ctx.metro.stop(); }
                     AudioCmd::Preview(plan) => ctx.preview.play(plan),
                     AudioCmd::StopPreview => ctx.preview.stop(),
                     AudioCmd::Settings(s) => ctx.metro.set_settings(s),
@@ -750,9 +779,7 @@ where
                         if let Some((step, left, attack)) = sequence.beat() {
                             let ms = base_ms + (offset + local_offset) as f32 / sample_rate * 1000.0;
                             let _ = sequence_beats.push((step, left, sequence.run_id(), ms));
-                            if let Some(plan) = attack {
-                                if attack_count < attacks.len() { attacks[attack_count] = Some((local_offset, plan)); attack_count += 1; }
-                            }
+                            if attack_count < attacks.len() { attacks[attack_count] = Some((local_offset, attack)); attack_count += 1; }
                         }
                     }
                     tick.offset_in_block += offset;
@@ -760,16 +787,19 @@ where
                     let _ = ticks.push((tick, ms));
                 });
                 let mut next_attack = 0;
+                let bpm = ctx.metro.settings().bpm;
                 for (frame_index, frame) in buf.chunks_exact_mut(channels).enumerate() {
                     if next_attack < attack_count {
                         if let Some((at, plan)) = attacks[next_attack] {
-                            if at == frame_index { ctx.preview.play(plan); next_attack += 1; }
+                            if at == frame_index { ctx.drums.sync_beat(bpm); if let Some(plan) = plan { ctx.sequence_preview.play(plan); } next_attack += 1; }
                         }
                     }
                     let preview = ctx.preview.sample();
+                    ctx.sequence_gain += (ctx.sequence_target - ctx.sequence_gain).clamp(-1.0/(sample_rate*0.01), 1.0/(sample_rate*0.01));
+                    let backing = ctx.sequence_preview.sample() * ctx.sequence_gain + ctx.drums.sample();
                     let target = ctx.click_target;
                     ctx.click_gain += (target - ctx.click_gain).clamp(-1.0 / (sample_rate * 0.01), 1.0 / (sample_rate * 0.01));
-                    for sample in frame { *sample = (*sample * ctx.click_gain + preview).clamp(-0.98, 0.98); }
+                    for sample in frame { *sample = (*sample * ctx.click_gain + preview + backing).clamp(-0.98, 0.98); }
                 }
                 for (o, sample) in chunk.iter_mut().zip(buf.iter()) { *o = T::from_sample(*sample); }
                 offset += chunk.len() / channels;

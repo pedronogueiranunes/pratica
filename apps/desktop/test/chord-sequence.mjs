@@ -11,7 +11,7 @@ class Context {
   constructor() { contexts.push(this); }
   createGain() { return gain(); }
   createWaveShaper() { return node(); }
-  createBuffer(_n, length) { return { length, copyToChannel(data) { assert.equal(length, data.length); assert.ok(data.every(Number.isFinite)); } }; }
+  createBuffer(_n, length) { return { length, duration: length / 48000, copyToChannel(data) { assert.equal(length, data.length); assert.ok(data.every(Number.isFinite)); } }; }
   createBufferSource() {
     const source = { ...node(), at: Infinity, end: Infinity, start(at) { this.at = at; this.end = at + this.buffer.length / 48000; }, stop(at = 0) { this.end = at; } };
     sources.push(source); return source;
@@ -55,4 +55,16 @@ await engine.startSequence(null, settings, steps, .5, true, 5);
 advance(contexts[0].currentTime + 3);
 assert.equal(intervals.size, 0, 'pausa longa não dispara acordes atrasados em rajada');
 assert.ok(events.some((e) => e.type === 'error' && /pausou/.test(e.message)));
+const onlyKick = { enabled: true, volume: .5, pattern: [1,...Array(15).fill(0)] };
+const from = sources.length, origin = contexts[0].currentTime + .05;
+await engine.startSequence(null, settings, [], .5, false, 6, onlyKick);
+for (let t = origin; t < origin + .7; t += .02) advance(t);
+engine.updateSequenceMixer(6, { volume: .25, click: false, drums: { ...onlyKick, volume: .25, pattern: [16,...Array(15).fill(0)] } });
+for (let t = origin + .7; t < origin + 2.15; t += .02) advance(t);
+const drums = sources.slice(from).filter((s) => [13440,3840].includes(s.buffer.length));
+assert.deepEqual(drums.map((s) => [s.buffer.length, +(s.at - origin).toFixed(4)]), [[13440,0],[3840,2]], 'novo padrão entra no compasso seguinte, sem reiniciar o transporte');
+engine.updateSequenceMixer(6, { volume: .5, click: false, drums: { ...onlyKick, enabled: false } });
+engine.stopSequence(); advance(origin + 3);
+assert.equal(contexts.length, 1, 'bateria sozinha compartilha contexto');
+await assert.rejects(engine.startSequence(null, { ...settings, beatsPerBar: 3 }, [], .5, true, 7, onlyKick));
 console.log('Sequência web: relógio, durações, BPM, clique mudo, cancelamento, parada e contexto único passaram.');

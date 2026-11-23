@@ -10,7 +10,7 @@ const done = (tx: IDBTransaction) => new Promise<void>((resolve, reject) => {
   tx.oncomplete = () => resolve(); tx.onabort = () => reject(tx.error ?? new Error("Gravação cancelada.")); tx.onerror = () => reject(tx.error);
 });
 const newer = (e: PracticeEvent, old?: Row) => !old || Date.parse(e.at) > old.atMs || (Date.parse(e.at) === old.atMs && e.id > old.eventId);
-const TABLES = ["events", "practice_logs", "routines", "settings", "sync_outbox", "songs", "playlists", "chart_revisions", "deferred_events"];
+const TABLES = ["events", "practice_logs", "routines", "settings", "sync_outbox", "songs", "playlists", "chart_revisions", "deferred_events", "sequences"];
 async function project(tx: IDBTransaction, e: StoredEvent): Promise<boolean> {
   if (!isKnownEvent(e)) return false;
   const atMs = Date.parse(e.at);
@@ -25,9 +25,9 @@ async function project(tx: IDBTransaction, e: StoredEvent): Promise<boolean> {
     const store = tx.objectStore("routines");
     const old = await result(store.get(routine.id)) as Row | undefined;
     if (newer(e, old)) store.put({ id: routine.id, value: routine, atMs, eventId: e.id });
-  } else if (e.type === "song.saved" || e.type === "playlist.saved") {
+  } else if (e.type === "song.saved" || e.type === "playlist.saved" || e.type === "sequence.saved") {
     const item = e.data as { id: string };
-    const store = tx.objectStore(e.type === "song.saved" ? "songs" : "playlists");
+    const store = tx.objectStore(e.type === "song.saved" ? "songs" : e.type === "sequence.saved" ? "sequences" : "playlists");
     const old = await result(store.get(item.id)) as Row | undefined;
     if (newer(e, old)) store.put({ id: item.id, value: item, atMs, eventId: e.id });
   } else if (e.type === "chart.revised") {
@@ -50,7 +50,7 @@ export class IndexedDbBackend implements StoreBackend {
   private db: Promise<IDBDatabase>;
   constructor(name = "pratica.v1") {
     this.db = new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open(name, 3);
+      const req = indexedDB.open(name, 4);
       req.onerror = () => reject(req.error);
       let blocked = false;
       req.onblocked = () => { blocked = true; reject(new Error("Feche as outras abas do Prática para atualizar os dados.")); };
@@ -72,6 +72,7 @@ export class IndexedDbBackend implements StoreBackend {
           db.createObjectStore("playlists", { keyPath: "id" });
           db.createObjectStore("chart_revisions", { keyPath: "revision" }).createIndex("chart", "chartId");
         }
+        if (change.oldVersion < 4) db.createObjectStore("sequences", { keyPath: "id" });
         if (change.oldVersion < 3) db.createObjectStore("deferred_events", { keyPath: "eventId" });
       };
       req.onsuccess = () => { if (blocked) { req.result.close(); return; } req.result.onversionchange = () => req.result.close(); resolve(req.result); };
@@ -105,7 +106,7 @@ export class IndexedDbBackend implements StoreBackend {
       const events = args.events as StoredEvent[];
       if (!Array.isArray(events)) throw new Error("Eventos inválidos.");
       events.forEach(validateStoredEvent);
-      if (args.relayMusic === true && events.some((e) => !/^(song|playlist|chart)\./.test(e.type))) throw new Error("O pacote só pode conter eventos de repertório.");
+      if (args.relayMusic === true && events.some((e) => !/^(song|playlist|chart|sequence)\./.test(e.type))) throw new Error("O pacote só pode conter eventos de repertório.");
       const tx = db.transaction(TABLES, "readwrite");
       const completion = done(tx);
       try {
@@ -146,9 +147,9 @@ export class IndexedDbBackend implements StoreBackend {
       if (operation === "metaSet") { store.put(args); await completion; return null; }
       const row = await result(store.get(args.key as string)); await completion; return row?.value ?? null;
     }
-    if (operation === "listSongs" || operation === "listPlaylists") {
-      const tx = db.transaction(operation === "listSongs" ? "songs" : "playlists", "readonly"); const completion = done(tx);
-      const rows = await result(tx.objectStore(operation === "listSongs" ? "songs" : "playlists").getAll()) as Row[]; await completion;
+    if (operation === "listSongs" || operation === "listPlaylists" || operation === "listSequences") {
+      const tx = db.transaction(operation === "listSongs" ? "songs" : operation === "listSequences" ? "sequences" : "playlists", "readonly"); const completion = done(tx);
+      const rows = await result(tx.objectStore(operation === "listSongs" ? "songs" : operation === "listSequences" ? "sequences" : "playlists").getAll()) as Row[]; await completion;
       return rows.map((row) => row.value);
     }
     if (operation === "chartRevisions") {

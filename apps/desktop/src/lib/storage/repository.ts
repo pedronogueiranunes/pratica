@@ -1,4 +1,4 @@
-import { validateChartRevision, validatePlaylist, validateSong, type ChartDraft, type ChartRevision, type Playlist, type Song, type SongStore,
+import { validateSavedSequence, type SequenceDraft, type SavedSequence, validateChartRevision, validatePlaylist, validateSong, type ChartDraft, type ChartRevision, type Playlist, type Song, type SongStore,
   createMusicPackage, validateMusicPackage, type MusicPackage, type MusicTransferStore, flattenSettings, settingsFromRows, validateStoredEvent, validateLog, validateRoutine, validDate,
   type LogRange, type StoredEvent, type PracticeEvent, type PracticeRecord, type PracticeStore, type SavedRoutine,
   type SettingChange, type SettingsPatch, type StoreBackend } from "@gx/core";
@@ -30,6 +30,16 @@ export class PracticeRepository implements PracticeStore, SongStore, MusicTransf
   async saveSettings(patch: SettingsPatch) {
     const changes = flattenSettings(patch, this.deviceId);
     if (changes.length) await this.mergeEvents([await this.event("settings.changed", changes)]);
+  }
+  async saveSequence(draft: SequenceDraft): Promise<SavedSequence> {
+    const event = await this.event("sequence.saved", null);
+    const saved = { ...draft, updatedAt: event.at }; validateSavedSequence(saved);
+    await this.mergeEvents([{ ...event, data: saved }]); return saved;
+  }
+  async listSequences(): Promise<SavedSequence[]> {
+    const rows = await this.backend.request("listSequences") as SavedSequence[];
+    rows.forEach(validateSavedSequence);
+    return rows.filter((s) => !s.deleted).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
   }
   async listSongs() { return this.backend.request("listSongs") as Promise<Song[]>; }
   async saveSong(song: Song) {

@@ -40,7 +40,7 @@ export function MusicTransfer() {
       <input ref={input} type="file" accept=".json,application/json" hidden onChange={(e) => { const file = e.target.files?.[0]; if (file) void read(file); e.target.value = ""; }} />
     </div>
     {pack && summary && <div className="transfer-preview">
-      <p>{fileName}: {summary.songs} músicas, {summary.playlists} playlists e {summary.revisions} revisões.</p>
+      <p>{fileName}: {summary.songs} músicas, {summary.playlists} playlists, {summary.revisions} revisões e {summary.sequences} sequências.</p>
       <p className="muted small">A importação combina os históricos. Metadados e playlists seguem a última gravação; cifras concorrentes ficam visíveis para comparar. {summary.deletions > 0 && `Inclui ${summary.deletions} eventos de exclusão.`} {summary.deferred > 0 && `${summary.deferred} eventos de tipos futuros serão guardados para uma versão compatível.`}</p>
       <div className="actions"><button className="btn ghost" disabled={busy} onClick={() => setPack(null)}>Cancelar</button><button className="btn primary" disabled={busy} onClick={() => void run(async () => { await s.importMusic(pack); setPack(null); setMessage("Repertório importado. Confira as músicas e os conflitos de cifra."); })}>{busy ? "Importando…" : "Confirmar importação"}</button></div>
     </div>}
