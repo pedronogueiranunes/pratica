@@ -42,4 +42,20 @@ assert.equal(contexts.length, 1, 'metrônomo e prévia não abrem saídas parale
 assert.ok(events.some((e) => e.type === 'metronomeState' && e.running));
 assert.ok(!events.some((e) => e.type === 'tunerState'));
 engine.stopMetronome(); engine.stopPreview();
+// Simula o Safari: a categoria precisa ser declarada antes de abrir/retomar áudio.
+const order = [];
+navigator.audioSession = { set type(value) { order.push(value); } };
+const originalResume = Context.prototype.resume;
+Context.prototype.resume = function () { order.push('resume'); return originalResume.call(this); };
+let selectOutput;
+Context.prototype.setSinkId = function () { order.push('sink'); return new Promise((resolve) => { selectOutput = resolve; }); };
+const mobileEngine = createWebEngine(() => {});
+const starting = mobileEngine.startMetronome('out:usb', { bpm: 60, beatsPerBar: 4, subdivision: 1, accentFirstBeat: true, volume: .5, sound: 'madeira' });
+assert.deepEqual(order, ['playback', 'resume', 'sink'], 'resume começa no gesto antes de await da saída; sessão musical não fica ambiente');
+mobileEngine.stopMetronome(); const before = sources.length; selectOutput(); await starting;
+assert.equal(sources.length, before, 'parar durante a seleção também cancela o início');
+Object.defineProperty(navigator, 'audioSession', { configurable: true, get() { return { set type(_value) { throw new Error('Não suportado'); } }; } });
+await engine.previewChord(null, [440], .5);
+engine.stopPreview();
+assert.ok(order.filter((v) => v === 'resume').length >= 2, 'um novo toque volta a retomar o contexto');
 console.log('Prévia web: cancelamento, repetição, limite de vozes, teto de saída e contexto compartilhado passaram.');

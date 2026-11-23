@@ -105,7 +105,15 @@ export function createWebEngine(emit: Emit) {
   let tunerSplit: ChannelSplitterNode | null = null;
   const inputCapabilities = new Map<string, { channels: number; sampleRate: number }>();
 
-  async function ensureCtx(deviceId: string | null) {
+  function configureAudioSession(recording = false) {
+    // iOS trata Web Audio como som ambiente por padrão, sujeito ao Silencioso.
+    // Declarar reprodução musical evita depender da chave de toque do aparelho.
+    const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+    if (session) { try { session.type = recording || !!stream ? "play-and-record" : "playback"; } catch { /* API opcional. */ } }
+  }
+
+  async function ensureCtx(deviceId: string | null, recording = false) {
+    configureAudioSession(recording);
     if (!ctx) {
       ctx = new AudioContext({ latencyHint: "interactive" }) as Sink;
       master = ctx.createGain();
@@ -115,6 +123,11 @@ export function createWebEngine(emit: Emit) {
       output.curve = curve;
       master.connect(output); output.connect(ctx.destination);
     }
+    // Precisa começar dentro do gesto, antes de aguardar seleção de saída.
+    // Também retoma o contexto interrupted do Safari em um novo toque.
+    const resumed = ctx.resume();
+    // Instala o handler já, mesmo se setSinkId ainda estiver pendente.
+    const ready = resumed.then(() => ({ ok: true as const }), (error: unknown) => ({ ok: false as const, error }));
     if (deviceId !== outputDevice && ctx.setSinkId) {
       try {
         await ctx.setSinkId(deviceId ?? "");
@@ -123,7 +136,8 @@ export function createWebEngine(emit: Emit) {
         // Navegador sem escolha de saída: fica na padrão.
       }
     }
-    await ctx.resume();
+    const result = await ready;
+    if (!result.ok) throw result.error;
     return ctx;
   }
 
@@ -376,7 +390,7 @@ export function createWebEngine(emit: Emit) {
       const generation = tunerGeneration;
       let acquired: MediaStream | null = null;
       try {
-        const c = await ensureCtx(outputDevice);
+        const c = await ensureCtx(outputDevice, true);
         if (generation !== tunerGeneration) return;
         const id = rawId(deviceId);
         acquired = await navigator.mediaDevices.getUserMedia({
@@ -453,6 +467,7 @@ export function createWebEngine(emit: Emit) {
       stream?.getTracks().forEach((t) => t.stop());
       stream = null;
       analyser = null;
+      if (ctx) configureAudioSession();
       if (!silent) emit({ type: "tunerState", running: false, deviceId: null });
     },
   };

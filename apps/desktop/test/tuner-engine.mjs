@@ -29,8 +29,10 @@ const makeTrack = () => {
 };
 const settle = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
 const engine = createWebEngine((e) => events.push(e));
+navigator.audioSession = { type: 'auto' };
 blockResume = true;
 let pending = engine.startTuner(null, 0, 440);
+assert.equal(navigator.audioSession.type, 'play-and-record', 'afinador mantém captura e reprodução na mesma sessão');
 await settle(); engine.stopTuner(); releaseResume(); await pending;
 assert.equal(requests, 0, 'cancelar durante resume não pede microfone');
 blockResume = false;
@@ -44,6 +46,7 @@ track = makeTrack(); acquire(track.stream); await pending;
 assert.ok(events.some((e) => e.type === 'tunerStream' && e.deviceId === 'in:mic' && e.channels === 1 && e.bufferFrames === null));
 assert.ok(events.some((e) => e.type === 'latency' && e.ms === 12 && e.deviceId === 'in:mic'));
 track.end(); assert.equal(track.stopped(), true);
+assert.equal(navigator.audioSession.type, 'playback', 'encerrar captura restaura a categoria musical');
 assert.ok(events.some((e) => e.type === 'error' && e.code === 'deviceLost'));
 events.length = 0;
 pending = engine.startTuner('in:mic', 1, 440); await settle();
