@@ -10,6 +10,7 @@ type Listener = (e: EngineEvent) => void;
 const listeners = new Set<Listener>();
 let nativeHook: Promise<void> | null = null;
 let sequenceRequest = 0;
+let spectrumRequest = 0;
 
 async function hookNative() {
   if (!isNative) return;
@@ -103,6 +104,11 @@ export const engine = {
   async setA4(a4: number) {
     if (isNative) return invoke("tuner_set_a4", { a4 });
     web().setA4(a4);
+  },
+  async setSpectrum(enabled: boolean) {
+    const request = ++spectrumRequest;
+    if (isNative) { await hookNative(); if (request !== spectrumRequest) return; return invoke("tuner_set_spectrum", { enabled }); }
+    web().setSpectrum(enabled);
   },
   async stopTuner() {
     if (isNative) return invoke("tuner_stop");

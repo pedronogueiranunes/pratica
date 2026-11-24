@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { build } from 'vite';
 const bundle = await build({ configFile: false, logLevel: 'silent', build: { write: false, lib: { entry: 'src/lib/web-engine.ts', formats: ['es'], fileName: 'engine' } } });
 const { createWebEngine } = await import(`data:text/javascript;base64,${Buffer.from((Array.isArray(bundle) ? bundle[0] : bundle).output[0].code).toString('base64')}`);
-let releaseResume, acquire, requests = 0, blockResume = false;
+let releaseResume, acquire, requests = 0, blockResume = false, analyse, clock = 0, signalGain = .1;
+Object.defineProperty(performance, "now", {value:()=>clock});
 const events = [];
 const node = () => ({ connect() {}, disconnect() {} });
 class Context {
@@ -13,10 +14,10 @@ class Context {
   resume() { return blockResume ? new Promise((r) => { releaseResume = r; }) : Promise.resolve(); }
   createMediaStreamSource() { return node(); }
   createChannelSplitter(channels) { assert.equal(channels, 1); return node(); }
-  createAnalyser() { return { ...node(), fftSize: 0, getFloatTimeDomainData() {} }; }
+  createAnalyser() { return { ...node(), fftSize: 0, getFloatTimeDomainData(buf) { for(let i=0;i<buf.length;i++) buf[i]=signalGain*[48,52,55].reduce((sum,m)=>sum+Math.sin(2*Math.PI*440*2**((m-69)/12)*i/48000)/3,0); } }; }
 }
 Object.defineProperty(globalThis, 'AudioContext', { value: Context, configurable: true });
-Object.defineProperty(globalThis, 'window', { value: { setInterval: () => 1, clearInterval() {} }, configurable: true });
+Object.defineProperty(globalThis, 'window', { value: { setInterval: (fn) => {analyse=fn;return 1;}, clearInterval() {} }, configurable: true });
 Object.defineProperty(globalThis, 'navigator', { value: { mediaDevices: {
   enumerateDevices: async () => [{ kind: 'audioinput', deviceId: 'default', groupId: 'a' }, { kind: 'audioinput', deviceId: 'mic', label: 'Microfone', groupId: 'a' }],
   addEventListener() {},
@@ -55,3 +56,21 @@ assert.equal(track.stopped(), true, 'canal inexistente libera captura');
 assert.ok(events.some((e) => e.type === 'tunerState' && !e.running));
 assert.equal(events.some((e) => e.type === 'tunerState' && e.running), false);
 console.log('Captura web: cancelamento antes/depois da permissão, canal real e desconexão passaram.');
+
+// Espectro usa o mesmo stream e só trabalha com consumidor explícito.
+engine.setSpectrum(true);
+const beforeRequests = requests; events.length=0;
+pending=engine.startTuner('in:mic',0,442); await settle(); track=makeTrack(); acquire(track.stream); await pending;
+assert.equal(requests,beforeRequests+1);
+clock+=150; analyse();
+const spectral=events.find((e)=>e.type==='spectrum');
+assert.ok(spectral); assert.equal(spectral.a4,442); assert.equal(spectral.fftSize,16384);
+assert.ok(spectral.powers.length<600);
+assert.ok(spectral.powers.some((v)=>v>0));
+signalGain=0; clock+=150; analyse();
+assert.equal(events.filter((e)=>e.type==='spectrum').at(-1).level,0);
+engine.setSpectrum(false); events.length=0; clock+=150; analyse();
+assert.equal(events.some((e)=>e.type==='spectrum'),false);
+assert.equal(requests,beforeRequests+1,'espectro não abre segunda captura');
+engine.stopTuner(); assert.equal(track.stopped(),true);
+console.log('Espectro web: opt-in, mesma captura, referência, silêncio e desligamento passaram.');

@@ -68,6 +68,7 @@ export type EngineEvent =
   | { type: "sequenceState"; runId: number; running: boolean }
   | { type: "sequenceBeat"; runId: number; step: number; beatsLeft: number; audibleInMs: number }
   | { type: "tick"; tick: Tick; audibleInMs: number }
+  | { type: "spectrum"; powers: number[]; sampleRate: number; fftSize: number; level: number; a4: number }
   | { type: "pitch"; reading: NoteReading | null; clarity: number; level: number }
   | { type: "latency"; direction: "input" | "output"; deviceId: string; ms: number }
   | { type: "devices"; devices: DeviceInfo[] }

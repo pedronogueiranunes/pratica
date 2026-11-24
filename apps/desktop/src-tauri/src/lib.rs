@@ -70,6 +70,9 @@ fn tuner_set_a4(audio: State<Audio>, a4: f32) {
 }
 
 #[tauri::command]
+fn tuner_set_spectrum(audio: State<Audio>, enabled: bool) { audio.0.set_spectrum(enabled); }
+
+#[tauri::command]
 fn tuner_stop(audio: State<Audio>) {
     audio.0.stop_tuner();
 }
@@ -118,6 +121,7 @@ pub fn run() {
             sequence_mixer,
             tuner_start,
             tuner_set_a4,
+            tuner_set_spectrum,
             tuner_stop,
             spotify::spotify_login,
             spotify::spotify_request,

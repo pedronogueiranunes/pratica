@@ -30,3 +30,6 @@ export * from "./drums";
 export * from "./saved-sequence";
 
 export * from "./music-transfer";
+
+export * from "./chromagram";
+

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { chordNoteName, chordTones, detectedFretPositions, FRETBOARD_STRINGS, fretboardPitches, fretFrequencies, fretPitch, identifyFretChord, SCALE_PATTERNS, scaleTones, selectFret, shapesFor, type Diagram, type FretPosition, type ScalePatternId, type StringNo } from "@gx/core";
+import { chordNoteName, chordTones, chromaFromSpectrum, transposeNote, detectedFretPositions, FRETBOARD_STRINGS, fretboardPitches, fretFrequencies, fretPitch, identifyFretChord, SCALE_PATTERNS, scaleTones, selectFret, shapesFor, type Diagram, type FretPosition, type ScalePatternId, type StringNo } from "@gx/core";
 import { useApp } from "../lib/app-state";
 import { engine, onEngine } from "../lib/engine";
 import { IconPlay } from "../icons";
@@ -15,11 +15,16 @@ export function FretboardExplorer({ diagram, embedded = false }: { diagram?: Dia
   const { settings } = useApp();
   const tuner = useTuner();
   const [follow, setFollow] = useState(false);
+  const [inputMode, setInputMode] = useState<"notes" | "chords">("notes");
+  const chordInput = follow && inputMode === "chords";
+  useEffect(() => { if (chordInput) return tuner.observeSpectrum(); }, [chordInput, tuner.observeSpectrum]);
   const detected = follow && !tuner.pending ? detectedFretPositions(tuner.running, tuner.reading, tuner.clarity, tuner.level) : [];
   const detectedKeys = new Set(detected.map(key));
   const [mode, setMode] = useState<Mode>(diagram ? "chord" : "all");
   const [chord, setChord] = useState(diagram?.name ?? "C"), [root, setRoot] = useState("A");
   const [scale, setScale] = useState<ScalePatternId>("minor-pentatonic"), [flats, setFlats] = useState(false);
+  const spectral = chordInput && tuner.running && !tuner.pending ? tuner.spectrum : null;
+  const chroma = useMemo(() => spectral ? chromaFromSpectrum(spectral.powers, spectral.sampleRate, spectral.fftSize, spectral.level, spectral.a4, flats) : null, [spectral, flats]);
   const [selected, setSelected] = useState<FretPosition[]>(() => diagram?.notes.map((n) => ({ string: n.string, fret: n.fret })) ?? []);
   const [focus, setFocus] = useState("6:0"), [volume, setVolume] = useState(.4), [sounding, setSounding] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -76,12 +81,22 @@ export function FretboardExplorer({ diagram, embedded = false }: { diagram?: Dia
     {!embedded && <h2>Braço</h2>}
     <p className="muted small">Afinação padrão, 24 casas. Mi agudo em cima. Selecione uma nota por corda para identificar um acorde.</p>
     <div className="fret-controls">
-      <label className="inline-check"><input type="checkbox" checked={follow} onChange={(e) => { stop(); setFollow(e.target.checked); }} />Seguir notas do afinador</label>
+      <label className="inline-check"><input type="checkbox" checked={follow} onChange={(e) => { stop(); setFollow(e.target.checked); }} />Seguir entrada do afinador</label>
+      {follow && <label>Analisar<select aria-label="Análise da entrada no braço" value={inputMode} onChange={(e) => setInputMode(e.target.value as "notes" | "chords")}><option value="notes">Notas (YIN)</option><option value="chords">Acordes (experimental)</option></select></label>}
       {follow && <button className="btn" onClick={tuner.toggle}>{tuner.pending ? "Cancelar entrada" : tuner.running ? "Desligar entrada" : "Ligar entrada"}</button>}
     </div>
     {follow && <div className="fret-input">
+      {inputMode === "chords" ? <>
+        <p><strong>Acordes, experimental</strong>. Harmônicos e distorção podem gerar notas falsas. Prefira som limpo e fones.</p>
+        <p className="num">{tuner.pending ? "Abrindo entrada…" : !tuner.running ? "Entrada desligada." : spectral && spectral.sampleRate / spectral.fftSize > 4 ? "Taxa alta para esta análise. Escolha uma entrada de até 96 kHz." : chroma ? `Classes: ${chroma.pcs.map((pc) => transposeNote("C", pc, flats)).join(" · ") || "nenhuma"}` : "Aguardando sinal para análise."}</p>
+        <p>{chroma?.candidates.length ? `Compatíveis: ${chroma.candidates.join(" · ")}` : "Sem correspondência exata de acorde."}</p>
+        <div className="chroma-bands" aria-label="Energia relativa das 12 classes de notas">{Array.from({ length: 12 }, (_, pc) => <label key={pc}>{transposeNote("C", pc, flats)}<meter min="0" max="1" value={chroma?.values[pc] ?? 0} aria-label={`Energia de ${transposeNote("C", pc, flats)}`} /></label>)}</div>
+        <p className="small muted">Energia relativa, não confiança. Os anéis marcam classes em todas as oitavas; não determinam baixo, inversão ou corda. O resultado não altera a cifra.</p>
+      </> : <>
       <p className="num">{detected.length && tuner.reading ? `${fretPitch(detected[0]!, flats).label} · ${tuner.reading.cents > 0 ? "+" : ""}${Math.round(tuner.reading.cents)} cents` : tuner.pending ? "Abrindo entrada…" : !tuner.running ? "Entrada desligada." : tuner.status === "weak" ? "Sinal baixo. Toque uma nota mais forte." : tuner.status === "unstable" ? "Toque uma nota por vez." : tuner.reading && ["flat", "sharp", "inTune"].includes(tuner.status) ? "Nota fora das 24 casas." : "Aguardando uma nota."}</p>
       <p className="small muted">O anel externo marca a altura captada, em todas as posições possíveis. O áudio não identifica a corda. Entrada e referência Lá são as mesmas do afinador; desligar aqui também desliga lá. Não há retorno do microfone nas caixas.</p>
+      </>}
+      {inputMode === "chords" && <p className="small muted">A entrada é compartilhada com o afinador, sem retorno nas caixas. Desligar aqui também desliga lá.</p>}
       <p className="small muted">Desmarcar ou sair da tela mantém a entrada ligada. Use Desligar entrada para encerrar.</p>
       {tuner.error && <p role="alert" className="error-text">{tuner.error} Confira a entrada em Ferramentas ou Ajustes e tente novamente.</p>}
     </div>}
@@ -102,10 +117,10 @@ export function FretboardExplorer({ diagram, embedded = false }: { diagram?: Dia
         </g>
         {FRETBOARD_STRINGS.map((s) => <g key={s} role="row" aria-rowindex={s} aria-label={`Corda ${s}`}>
           {map.filter((p) => p.string === s).map((p) => {
-            const id = key(p), chosen = selectionKeys.has(id), heard = detectedKeys.has(id), highlighted = mode === "all" || pcs.has(p.pc) || heard, isRoot = p.pc === fundamental;
+            const id = key(p), chosen = selectionKeys.has(id), heard = chordInput ? !!chroma?.pcs.includes(p.pc) : detectedKeys.has(id), highlighted = mode === "all" || pcs.has(p.pc) || heard, isRoot = p.pc === fundamental;
             const label = mode === "chord" && pcs.has(p.pc) ? fretPitch(p, flats, chord.trim()).label : p.label;
             const note = mode === "chord" && pcs.has(p.pc) ? chordNoteName(chord.trim(), p.pc) : label.replace(/-?\d+$/, "");
-            return <g key={id} ref={(el) => { if (el) cells.current.set(id, el); else cells.current.delete(id); }} role="gridcell" aria-colindex={p.fret + 1} aria-selected={chosen} aria-label={`${label}, corda ${s}, casa ${p.fret}${heard ? ", nota captada" : ""}`} tabIndex={focus === id ? 0 : -1} transform={`translate(${X + p.fret * W} ${Y + (s - 1) * H})`} className={`fret-cell${chosen ? " chosen" : ""}${highlighted ? " highlighted" : ""}${isRoot ? " root" : ""}${chosen && sounding ? " sounding" : ""}`} onFocus={() => setFocus(id)} onKeyDown={(e) => keyboard(e, p)} onClick={(e) => { e.currentTarget.focus(); setFocus(id); toggle(p); }}>
+            return <g key={id} ref={(el) => { if (el) cells.current.set(id, el); else cells.current.delete(id); }} role="gridcell" aria-colindex={p.fret + 1} aria-selected={chosen} aria-label={`${label}, corda ${s}, casa ${p.fret}${heard ? chordInput ? ", classe captada" : ", nota captada" : ""}`} tabIndex={focus === id ? 0 : -1} transform={`translate(${X + p.fret * W} ${Y + (s - 1) * H})`} className={`fret-cell${chosen ? " chosen" : ""}${highlighted ? " highlighted" : ""}${isRoot ? " root" : ""}${chosen && sounding ? " sounding" : ""}`} onFocus={() => setFocus(id)} onKeyDown={(e) => keyboard(e, p)} onClick={(e) => { e.currentTarget.focus(); setFocus(id); toggle(p); }}>
               <rect className="fret-hit" x={-W / 2} y={-H / 2} width={W} height={H} rx={6} /><circle r={18} /><text dy=".35em" textAnchor="middle">{note}</text>
               {heard && <circle className="fret-detected" r={22} aria-hidden="true" />}
             </g>;
@@ -120,7 +135,7 @@ export function FretboardExplorer({ diagram, embedded = false }: { diagram?: Dia
       {diagram && <button className="btn" onClick={() => { stop(); setSelected(diagram.notes.map((n) => ({ string: n.string, fret: n.fret }))); }}>Repor forma da cifra</button>}
       <label className="chord-preview-volume">Volume<input type="range" min="0" max="100" step="5" aria-label="Volume do braço" value={volume * 100} onChange={(e) => { stop(); setVolume(Number(e.target.value) / 100); }} /><span className="num">{Math.round(volume * 100)}%</span></label>
     </div>
-    {follow && <p className="small muted">Desmarque Seguir notas para ouvir a seleção sem captar o som da própria prévia.</p>}
+    {follow && <p className="small muted">Desmarque Seguir entrada para ouvir a seleção sem captar o som da própria prévia.</p>}
     <div className="fret-result" role="status">
       <p>{selected.length ? `Notas: ${selected.map((p) => fretPitch(p, flats).label).join(" · ")}` : "Nenhuma nota escolhida."}</p>
       {selected.length > 0 && <p>{matches.length ? `Compatíveis: ${matches.map((m) => m.name).join(" · ")}` : "Sem correspondência exata no catálogo. Nenhuma nota foi completada."}</p>}

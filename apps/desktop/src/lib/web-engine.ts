@@ -3,7 +3,7 @@
 // (sem depender da precisão do setTimeout) e afinador YIN sobre o microfone.
 
 import {
-  detectPitch,
+  detectPitch, powerSpectrum,
   guessConnection,
   noteFromFrequency,
   rms,
@@ -99,6 +99,19 @@ export function createWebEngine(emit: Emit) {
   let stream: MediaStream | null = null;
   let analyser: AnalyserNode | null = null;
   let tunerTimer = 0;
+  let spectrumEnabled = false, spectrumChannel = 0, lastSpectrum = 0;
+  let spectrumAnalyser: AnalyserNode | null = null;
+  let spectrumBuffer: Float32Array<ArrayBuffer> | null = null;
+  const configureSpectrum = () => {
+    if (spectrumAnalyser) { tunerSplit?.disconnect(spectrumAnalyser); spectrumAnalyser.disconnect(); }
+    spectrumAnalyser = null; spectrumBuffer = null;
+    if (spectrumEnabled && tunerSplit && ctx) {
+      spectrumAnalyser = ctx.createAnalyser();
+      spectrumAnalyser.fftSize = ctx.sampleRate > 50000 ? 32768 : 16384;
+      spectrumBuffer = new Float32Array(spectrumAnalyser.fftSize);
+      tunerSplit.connect(spectrumAnalyser, spectrumChannel); lastSpectrum = performance.now();
+    }
+  };
   let a4 = 440;
   let tunerGeneration = 0;
   let tunerSource: MediaStreamAudioSourceNode | null = null;
@@ -414,7 +427,7 @@ export function createWebEngine(emit: Emit) {
         const src = c.createMediaStreamSource(stream);
         const split = c.createChannelSplitter(channels);
         tunerSource = src;
-        tunerSplit = split;
+        tunerSplit = split; spectrumChannel = channel; configureSpectrum();
         analyser = c.createAnalyser();
         analyser.fftSize = 4096;
         src.connect(split);
@@ -427,6 +440,13 @@ export function createWebEngine(emit: Emit) {
           const est = level >= 0.004 ? detectPitch(buf, c.sampleRate) : null;
           const reading = est ? noteFromFrequency(est.frequency, a4) : null;
           emit({ type: "pitch", reading, clarity: est?.clarity ?? 0, level });
+          if (spectrumAnalyser && spectrumBuffer && performance.now() - lastSpectrum >= 120) {
+            spectrumAnalyser.getFloatTimeDomainData(spectrumBuffer);
+            const powers = powerSpectrum(spectrumBuffer);
+            const bins = Math.min(powers.length, Math.ceil(1400 * spectrumBuffer.length / c.sampleRate) + 2);
+            emit({ type: "spectrum", powers: Array.from(powers.subarray(0, bins)), sampleRate: c.sampleRate, fftSize: spectrumBuffer.length, level: rms(spectrumBuffer), a4 });
+            lastSpectrum = performance.now();
+          }
         }, 30);
         track.addEventListener("ended", () => {
           if (generation !== tunerGeneration) return;
@@ -453,6 +473,7 @@ export function createWebEngine(emit: Emit) {
         emit({ type: "tunerState", running: false, deviceId: null });
       }
     },
+    setSpectrum(enabled: boolean) { spectrumEnabled = enabled; configureSpectrum(); },
     setA4(v: number) {
       a4 = v;
     },
@@ -460,6 +481,7 @@ export function createWebEngine(emit: Emit) {
       tunerGeneration++;
       window.clearInterval(tunerTimer);
       tunerSource?.disconnect();
+      spectrumAnalyser?.disconnect(); spectrumAnalyser = null; spectrumBuffer = null;
       tunerSplit?.disconnect();
       analyser?.disconnect();
       tunerSource = null;

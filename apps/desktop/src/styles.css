@@ -2444,3 +2444,13 @@ button.chord-tile[aria-pressed="true"] {
 
 .chord-detail .btn.primary { color: #161616; }
 .chord-grid .chord-diagram { max-width: 100%; height: auto; }
+
+.chroma-bands { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+.chroma-bands label { display: flex; flex-direction: column; gap: 6px; font: 13px var(--font-mono); color: var(--fg); }
+.chroma-bands meter { width: 100%; height: 12px; accent-color: var(--in-tune); }
+.chroma-bands meter::-webkit-meter-bar { background: var(--bg-sunken); border: 1px solid var(--line); border-radius: 3px; box-shadow: none; }
+.chroma-bands meter::-webkit-meter-optimum-value { background: var(--in-tune); border-radius: 2px; }
+.chroma-bands meter::-moz-meter-bar { background: var(--in-tune); }
+.fret-controls input[type="checkbox"] { accent-color: var(--accent); }
+@media (max-width: 720px) { .chroma-bands { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+

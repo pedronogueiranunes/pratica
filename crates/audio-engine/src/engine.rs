@@ -10,6 +10,7 @@ use crate::drums::DrumPlayer;
 use crate::preview::{ChordPreview, PreviewPlan};
 use crate::latency::{Connection, DeviceInfo};
 use crate::metronome::{Metronome, MetronomeSettings, Tick};
+use crate::spectrum::SpectrumAnalyzer;
 use crate::pitch::{note_from_frequency, rms, NoteReading, PitchDetector};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, InterfaceType, SampleFormat, SizedSample};
@@ -37,6 +38,8 @@ pub enum EngineEvent {
     SequenceBeat { run_id: u32, step: usize, beats_left: u32, audible_in_ms: f32 },
     #[serde(rename_all = "camelCase")]
     Tick { tick: Tick, audible_in_ms: f32 },
+    #[serde(rename_all = "camelCase")]
+    Spectrum { powers: Vec<f32>, sample_rate: u32, fft_size: usize, level: f32, a4: f32 },
     #[serde(rename_all = "camelCase")]
     Pitch { reading: Option<NoteReading>, clarity: f32, level: f32 },
     #[serde(rename_all = "camelCase")]
@@ -84,6 +87,7 @@ enum Command {
     StopMetronome,
     StartTuner { device_id: Option<String>, channel: u16, a4: f32, buffer_frames: Option<u32> },
     SetA4(f32),
+    SetSpectrum(bool),
     StopTuner,
     RefreshDevices,
     MeasureLatency,
@@ -152,6 +156,7 @@ impl EngineHandle {
     pub fn start_tuner_with_buffer(&self, device_id: Option<String>, channel: u16, a4: f32, buffer_frames: Option<u32>) {
         let _ = self.tx.send(Command::StartTuner { device_id, channel, a4, buffer_frames });
     }
+    pub fn set_spectrum(&self, enabled: bool) { let _ = self.tx.send(Command::SetSpectrum(enabled)); }
     pub fn set_a4(&self, a4: f32) {
         let _ = self.tx.send(Command::SetA4(a4));
     }
@@ -273,6 +278,8 @@ struct TunerStream {
     device_id: String,
     samples: rtrb::Consumer<f32>,
     detector: PitchDetector,
+    spectrum: Option<SpectrumAnalyzer>,
+    last_spectrum: Instant,
     window: Vec<f32>,
     a4: f32,
     last_emit: Instant,
@@ -284,6 +291,7 @@ struct EngineThread {
     emit: Box<dyn Fn(EngineEvent) + Send>,
     metronome: Option<MetronomeStream>,
     tuner: Option<TunerStream>,
+    spectrum_enabled: bool,
     errors_tx: Sender<(Direction, String)>,
     errors_rx: mpsc::Receiver<(Direction, String)>,
     known_devices: Vec<String>,
@@ -297,6 +305,7 @@ impl EngineThread {
             emit,
             metronome: None,
             tuner: None,
+            spectrum_enabled: false,
             errors_tx,
             errors_rx,
             known_devices: Vec::new(),
@@ -433,6 +442,13 @@ impl EngineThread {
                     }
                 }
             }
+            Command::SetSpectrum(enabled) => {
+                self.spectrum_enabled = enabled;
+                if let Some(t) = self.tuner.as_mut() {
+                    t.spectrum = enabled.then(|| SpectrumAnalyzer::new(t.sample_rate));
+                    t.window.clear();
+                }
+            }
             Command::SetA4(a4) => {
                 if let Some(t) = self.tuner.as_mut() {
                     t.a4 = a4.clamp(400.0, 480.0);
@@ -525,8 +541,9 @@ impl EngineThread {
                 t.window.push(s);
                 fresh = true;
             }
-            if t.window.len() > TUNER_WINDOW * 4 {
-                let drop = t.window.len() - TUNER_WINDOW;
+            let retain = t.spectrum.as_ref().map_or(TUNER_WINDOW, |s| s.size);
+            if t.window.len() > retain * 4 {
+                let drop = t.window.len() - retain;
                 t.window.drain(..drop);
             }
             if fresh && t.window.len() >= TUNER_WINDOW && t.last_emit.elapsed() >= TUNER_EMIT_EVERY {
@@ -537,7 +554,16 @@ impl EngineThread {
                 let reading = est.and_then(|e| note_from_frequency(e.frequency, t.a4));
                 (self.emit)(EngineEvent::Pitch { reading, clarity: est.map(|e| e.clarity).unwrap_or(0.0), level });
                 t.last_emit = Instant::now();
-                t.window.drain(..start);
+                if let Some(spectrum) = t.spectrum.as_mut() {
+                    if t.window.len() >= spectrum.size && t.last_spectrum.elapsed() >= Duration::from_millis(120) {
+                        let samples = &t.window[t.window.len() - spectrum.size..];
+                        let level = rms(samples);
+                        let powers = spectrum.analyze(samples);
+                        (self.emit)(EngineEvent::Spectrum { powers, sample_rate: t.sample_rate, fft_size: spectrum.size, level, a4: t.a4 });
+                        t.last_spectrum = Instant::now();
+                    }
+                }
+                if t.window.len() > retain { t.window.drain(..t.window.len() - retain); }
             }
             let ms = f32::from_bits(t.latency_ms.load(Ordering::Relaxed));
             if ms > 0.0 && (ms - t.last_latency).abs() >= 1.0 {
@@ -690,6 +716,8 @@ impl EngineThread {
             device_id: id,
             samples: rx,
             detector: PitchDetector::new(sample_rate, TUNER_WINDOW),
+            spectrum: self.spectrum_enabled.then(|| SpectrumAnalyzer::new(sample_rate)),
+            last_spectrum: Instant::now(),
             window: Vec::with_capacity(TUNER_WINDOW * 4),
             a4: a4.clamp(400.0, 480.0),
             last_emit: Instant::now(),
