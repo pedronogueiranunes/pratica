@@ -68,3 +68,9 @@ engine.stopSequence(); advance(origin + 3);
 assert.equal(contexts.length, 1, 'bateria sozinha compartilha contexto');
 await assert.rejects(engine.startSequence(null, { ...settings, beatsPerBar: 3 }, [], .5, true, 7, onlyKick));
 console.log('Sequência web: relógio, durações, BPM, clique mudo, cancelamento, parada e contexto único passaram.');
+// A confirmação de início precede o tick visual zero, inclusive após reinício.
+engine.stopMetronome(); events.length=0;
+await engine.startMetronome(null,settings);
+assert.ok(events.findIndex((e)=>e.type==='metronomeState'&&e.running)<events.findIndex((e)=>e.type==='tick'));
+assert.equal(events.find((e)=>e.type==='tick').tick.index,0);
+engine.stopMetronome();

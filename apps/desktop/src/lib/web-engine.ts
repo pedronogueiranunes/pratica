@@ -372,8 +372,8 @@ export function createWebEngine(emit: Emit) {
       nextIndex = 0;
       window.clearInterval(timer);
       timer = window.setInterval(schedule, TICK_MS);
-      schedule();
       emit({ type: "metronomeState", running: true, deviceId });
+      schedule();
       const ms = ((c.baseLatency ?? 0) + (c.outputLatency ?? 0)) * 1000;
       if (ms > 0) emit({ type: "latency", direction: "output", deviceId: deviceId ?? "padrão", ms });
     },

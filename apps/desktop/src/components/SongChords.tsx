@@ -6,7 +6,7 @@ import { useNav } from "../lib/nav";
 import { useSequenceDraft } from "../lib/sequence-draft";
 import { ChordCard, ChordDiagram } from "./ChordDiagram";
 import { ChordStaff } from "./ChordStaff";
-import { ChordChart } from "./ChordChart";
+import { ChartPractice } from "./ChartPractice";
 import { IconPlay } from "../icons";
 import { FretboardExplorer } from "./FretboardExplorer";
 
@@ -106,6 +106,6 @@ export function SongChords({ doc, label, capo }: { doc: ChordProDoc; label: stri
       {message && <p role="status" className="small muted">{message}</p>}
       {(error || draftError) && <p role="alert" className="error-text">{error || draftError}</p>}
     </section>}
-    <ChordChart doc={doc} label={label} selectedChord={sourceName} onChord={select} />
+    <ChartPractice doc={doc} label={label} capo={capo} selectedChord={sourceName} onChord={select} onBegin={stop} />
   </>;
 }

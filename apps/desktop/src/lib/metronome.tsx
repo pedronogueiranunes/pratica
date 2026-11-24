@@ -13,7 +13,7 @@ interface MetronomeApi {
   running: boolean;
   setBpm: (n: number) => void;
   toggle: () => void;
-  start: () => void;
+  start: () => Promise<boolean>;
   stop: () => void;
   /** Assina os cliques. O callback roda no momento em que o clique soa. */
   onTick: (fn: (t: Tick) => void) => () => void;
@@ -25,6 +25,8 @@ export function MetronomeProvider({ children }: { children: ReactNode }) {
   const { settings } = useApp();
   const [bpm, setBpmState] = useState(() => clampBpm(Number(localStorage.getItem(BPM_KEY)) || 60));
   const [running, setRunning] = useState(false);
+  const tickEpoch = useRef(0), tickReady = useRef(true), tickTimers = useRef(new Set<number>());
+  const clearTicks = () => { tickEpoch.current++; for (const id of tickTimers.current) window.clearTimeout(id); tickTimers.current.clear(); };
   const tickFns = useRef(new Set<(t: Tick) => void>());
 
   const engineSettings: MetronomeSettings = useMemo(
@@ -44,17 +46,20 @@ export function MetronomeProvider({ children }: { children: ReactNode }) {
   useEffect(
     () =>
       onEngine((e) => {
-        if (e.type === "metronomeState") setRunning(e.running);
-        if (e.type === "tick") {
+        if (e.type === "metronomeState") { tickReady.current = e.running; if (!e.running) clearTicks(); setRunning(e.running); }
+        if (e.type === "tick" && tickReady.current) {
           // O evento chega antes do som: espera o atraso informado pelo motor
           // para o pulso visual coincidir com o clique.
-          const fire = () => tickFns.current.forEach((fn) => fn(e.tick));
-          if (e.audibleInMs > 4) window.setTimeout(fire, e.audibleInMs);
+          const epoch = tickEpoch.current;
+          const fire = () => { if (tickReady.current && epoch === tickEpoch.current) tickFns.current.forEach((fn) => fn(e.tick)); };
+          if (e.audibleInMs > 4) { const id = window.setTimeout(() => { tickTimers.current.delete(id); fire(); }, e.audibleInMs); tickTimers.current.add(id); }
           else fire();
         }
       }),
     [],
   );
+
+  useEffect(() => () => clearTicks(), []);
 
   useEffect(() => {
     if (running) void engine.updateMetronome(engineSettings);
@@ -65,12 +70,13 @@ export function MetronomeProvider({ children }: { children: ReactNode }) {
     setBpmState(v);
     localStorage.setItem(BPM_KEY, String(v));
   }, []);
-  const start = useCallback(() => {
-    setRunning(true);
-    void engine.startMetronome(settings.metronome.outputDeviceId ?? null, latest.current);
+  const start = useCallback(async () => {
+    clearTicks(); tickReady.current = false; setRunning(true);
+    try { await engine.startMetronome(settings.metronome.outputDeviceId ?? null, latest.current); return true; }
+    catch { clearTicks(); tickReady.current = false; setRunning(false); return false; }
   }, [settings.metronome.outputDeviceId]);
   const stop = useCallback(() => {
-    setRunning(false);
+    clearTicks(); tickReady.current = false; setRunning(false);
     void engine.stopMetronome();
   }, []);
   const toggle = useCallback(() => (running ? stop() : start()), [running, start, stop]);
