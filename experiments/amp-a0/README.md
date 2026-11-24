@@ -216,3 +216,78 @@ completa do caminho entrada→NAM→saída descrita acima.
 
 Se falhar, registrar os números e parar. Não usar o benchmark sintético como
 justificativa para avançar ao pedal, à versão web ou ao TONE3000.
+
+## Roteiro do teste físico com a Scarlett (para o Pedro)
+
+Antes de tudo: o resultado deste teste é o que decide a A0. Nada aqui aprova sozinho.
+
+### Modelo
+
+- Um `.nam` local, de licença CC BY, CC0 ou GPL (TONE3000 ou `pelennor2170/NAM_models`).
+  Anote nome, autor, licença, link e arquitetura (A1/A2, WaveNet/LSTM, taxa).
+- Guarde fora do repositório e fora do iCloud, por exemplo `~/NAM/modelos/`.
+  Nunca dentro de `~/Dev/guitar-exercises-app`. Um modelo por execução.
+- Compatibilidade conferida na fonte do nam-rs 0.4.0 (`6462dd5`): WaveNet A1 e A2,
+  LSTM e SlimmableContainer A2, com FiLM, gating, bottleneck, grupos e
+  `condition_dsp`. Recusa ao carregar: entrada multicanal, head final com mais de
+  um canal, gating misto numa mesma array e ativações fora do conjunto. Se recusar,
+  anote a mensagem e troque de modelo; não edite o arquivo. A bancada ainda não
+  foi exercitada com um SlimmableContainer real; preferir um A2 simples ou A1 no
+  primeiro teste.
+- A taxa do modelo precisa ser a da Scarlett (normalmente 48 kHz). Sem resampling.
+
+### Segurança
+
+1. Fones com fio na Scarlett. Sem Bluetooth, sem AirPods, sem caixas.
+2. Botão de volume dos fones e Monitor da Scarlett quase no mínimo antes de rodar.
+3. Desligue o monitoramento direto (Direct Monitor/Air) para ouvir só o caminho processado.
+4. Feche a DAW e o Prática (metrônomo e afinador desligados).
+5. A bancada já começa com saída em -24 dB e teto de amostra em -3 dBFS, com rampa.
+   Suba o volume no botão da interface aos poucos, nunca no software.
+6. Se houver chiado, realimentação ou estalo forte: Ctrl+C só se a bancada não parar
+   sozinha, e tire os fones antes.
+
+### Passos
+
+```sh
+cd ~/Dev/guitar-exercises-app
+cargo build --release --manifest-path experiments/amp-a0/Cargo.toml
+B=experiments/amp-a0/target/release/pratica-amp-a0
+M=~/NAM/modelos/SEU_MODELO.nam
+$B list                                   # copie o ID exato da Scarlett
+$B bench --model "$M" --frames 64 --seconds 10
+$B bench --model "$M" --frames 128 --seconds 10
+python3 experiments/amp-a0/scripts/validate-offline.py \
+  --oracle target/amp-a0/oracle-build/pratica-nam-oracle --model "$M"
+$B bypass  --device 'ID' --sample-rate 48000 --input-channel 1 --output-channel 1 --frames 128 --seconds 60
+$B monitor --device 'ID' --model "$M" --input-channel 1 --output-channel 1 --frames 128 --seconds 60
+$B monitor --device 'ID' --model "$M" --input-channel 1 --output-channel 1 --frames 64  --seconds 60
+# só se os de 60 s passarem limpos:
+$B monitor --device 'ID' --model "$M" --input-channel 1 --output-channel 1 --frames 64  --seconds 600
+```
+
+Comece por 128 frames, depois 64. Durante o de 10 minutos, use o Mac normalmente
+(navegador, Finder) para ver se a interface gráfica derruba o áudio.
+A latência real (RTL) só vale pela montagem de loopback descrita em
+"Medir entrada→saída de verdade"; sem ela, anote como não medida.
+
+### O que registrar (copie e preencha)
+
+```
+Data/hora:
+Mac / macOS:            Scarlett (modelo/firmware):
+Modelo .nam:            licença:        link:
+Arquitetura (A1/A2, tipo):              taxa:
+Carregou no nam-rs? (sim / erro):
+Paridade C++ (erro máx./RMS, 64 e 128):
+Bench 64:  p99 ___ ms  máx ___ ms  deadline_misses ___  alocações ___
+Bench 128: p99 ___ ms  máx ___ ms  deadline_misses ___  alocações ___
+Monitor 128 (60 s): buffer real ___  CPU ___ %  p99/pico callback ___  under/overflow ___  reequilíbrios ___  clipping ___
+Monitor 64  (60 s): buffer real ___  CPU ___ %  p99/pico callback ___  under/overflow ___  reequilíbrios ___  clipping ___
+Monitor 64 (10 min): falhas ___  under/overflow ___  reequilíbrios ___
+RTL (analyze-rtl, bypass/monitor, 64/128): ___ ms  ou "não medido"
+Tocabilidade (1 a 5) e notas: atraso percebido, ataque, ruído, estalos, timbre:
+```
+
+Cole o bloco preenchido e os JSON gerados em `target/amp-a0/` na conversa.
+Os critérios para seguir à A1 continuam os da seção anterior.

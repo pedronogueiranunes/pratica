@@ -1,5 +1,12 @@
 # Status
 
+## Checkout alinhado e guia da cifra revisado, sem publicar (24/11/2026)
+
+- Git alinhado sem perda: tag `backup/pre-align-20261124-1111` no antigo HEAD `26749d9`, ramo `backup/wt-20261124-1111` e stash com o diretório inteiro, e cópia dos 76 arquivos alterados/novos em `.git/backup-wt-20261124-1111/`. Depois `git fetch` e `git reset --mixed origin/main` (`edefc23`). Sobraram só os 10 arquivos do guia da cifra pelo metrônomo. Sem reset --hard, clean ou push.
+- Guia revisado: término (para metrônomo e mostra Estudo concluído), loop, reinício do metrônomo (pede para começar de novo), espera pelo tick zero, subdivisões ignoradas e compasso 3/4 conferidos numa simulação da lógica do componente. Correção: trocar revisão ou editar a cifra agora para o guia e zera os tempos; transpor mantém.
+- Executado neste ambiente (VM Linux, sem binários nativos do Mac): 4 casos de `chart-guide.test.ts` com shim mínimo de vitest, simulação do handler de ticks e `tsc --noEmit` do core (limpo) e do desktop (sem erros em `src/`; só `@types/node` ausente no VM). **Não executados:** vitest real, `test/chord-sequence.mjs` (Vite nativo), cargo, build:web, build:app e teste na interface. Rodar no Mac antes de publicar.
+- Amp A0: roteiro do teste físico com a Scarlett e ficha de registro em `experiments/amp-a0/README.md`. nam-rs 0.4.0 abre A1 e A2 (WaveNet, LSTM, SlimmableContainer), conferido na fonte. A0 continua não aprovada até o resultado do teste do Pedro.
+
 ## Publicação de cromagrama e círculo autorizada (24/11/2026)
 
 - Push solicitado pelo Pedro: cromagrama `7603861fd487c944b7a3a75a047aec9fe7f3ce11`, círculo de quintas `91e1b604efa5ed7c3417a00a33ab6998b9a692d9` e documentação em commit separado, sobre a main `8159bf9`, sem force. Apenas 24 arquivos novos/diferentes contra o remoto.
