@@ -38,6 +38,17 @@ braço, usando a entrada compartilhada do afinador, sem inferir a corda ou mudar
 a seleção manual. Testes sintéticos e UI documentados em
 `13-notas-captadas-no-braco.md`. Ainda faltam cromagrama experimental e avanço
 da cifra pelo metrônomo; a 3C permanece parcial.
+
+### Progresso da 3C: cromagrama (24/11)
+
+Terceiro bloco local em `14-cromagrama-experimental.md`: espectro opt-in na mesma
+captura do afinador, cromagrama e correspondência exata de classes no core,
+anéis no braço em todas as oitavas. Experimental, sem inferir baixo/corda e sem
+transcrição. Testado com sinais sintéticos; guitarra real e carga/atraso no Mac
+pendentes. Falta o avanço da cifra pelo metrônomo para concluir a 3C.
+
+## Como testar
+
 - 3A: testes do core com cifras coladas que o Pedro fornecer; contrato SQLite/IndexedDB ampliado; testes Rust de revisões e evento desconhecido; no app, colar, corrigir, salvar, transpor e reabrir.
 - 3B: contrato de playlists; web offline após deploy aprovado; exportar no Mac e importar no Chrome; edição concorrente em dois Macs.
 - 3C: testes de identificação de acordes e cromagrama com sinais sintéticos; no app, tocar notas e acordes com a guitarra e conferir o destaque.
@@ -53,8 +64,9 @@ em entregas em `08-acordes-sequenciador-e-bateria.md`. Inversões e formas alter
 implementadas; sequenciador, bateria e persistência entregues em
 `09-sequenciador.md` e `10-bateria-e-sequencias-salvas.md`. A extensão local
 `11-acordes-na-cifra.md` leva som, pauta, inversões e formas para os acordes
-das músicas, incluindo conversão de capo ao enviar à sequência. Braço completo
-e cromagrama da 3C continuam como próximo bloco, não implementados aqui. Preservar os
+das músicas, incluindo conversão de capo ao enviar à sequência. Braço completo,
+notas YIN e cromagrama experimental foram entregues nos blocos `12`, `13` e `14`.
+Falta o avanço pelo metrônomo para concluir a 3C. Preservar os
 ajustes do Pedro na interface. Não inicia a Fase 4 de integrações
 de música de fundo e adaptação de exercícios.
 

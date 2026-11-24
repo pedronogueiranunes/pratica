@@ -27,6 +27,11 @@ Um app para a prática diária de guitarra, focado em dexteridade, acordes e esc
 18. **Bateria de acompanhamento (implementado localmente, 23/11/2026):** ligar/desligar padrões originais de rock, reggae, indie rock, metal, ska, afrobeat e dois loops simples, em 4/4. Volume próprio ao vivo, independente do metrônomo e dos acordes, com relógio compartilhado; também utilizável sem sequência em Ferramentas e no exercício. Ver `10-bateria-e-sequencias-salvas.md`.
 
 ## Pontos técnicos que o desenvolvimento precisa resolver cedo
+
+Ferramenta adicional solicitada e implementada localmente em 24/11/2026:
+**Círculo de quintas**, em Ferramentas, com relativos maiores/menores naturais,
+armaduras, enarmonias, notas e campo harmônico. Ver `15-circulo-de-quintas.md`.
+
 Estes itens podem mudar o escopo, então decidir com o Pedro antes de construir.
 
 - **Áudio do Spotify não é acessível.** O áudio é protegido, e a análise de faixas (BPM, tom, batidas) do Spotify não está disponível para apps novos. Então "adaptar exercícios à música" não pode depender de analisar o áudio do Spotify. Opções: usar BPM e tom informados ou tocados no tap tempo pelo usuário, analisar arquivos de áudio locais que ele importe, ou usar dados da própria cifra. O Spotify pode servir para tocar a faixa ao fundo (o Pedro agora tem Premium) controlando o app do Spotify, sem acesso ao áudio bruto.

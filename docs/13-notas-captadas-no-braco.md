@@ -5,6 +5,10 @@ da cifra, marcar **Seguir notas do afinador** e clicar **Ligar entrada**. A entr
 canal, buffer e referência Lá vêm do afinador já existente. Não abre outra captura,
 não altera DSP, não monitora o microfone nas caixas e não grava áudio.
 
+Na extensão de cromagrama, o controle passou a se chamar **Seguir entrada do
+afinador**. Para manter este comportamento monofônico, escolher **Notas (YIN)**
+em Analisar. Ver `14-cromagrama-experimental.md` para o novo modo de acordes.
+
 O anel externo usa a cor de afinação do tema. Marca todas as posições entre as
 casas 0 e 24 com o mesmo MIDI da nota captada, incluindo a oitava. O áudio não
 permite determinar qual corda foi usada. A seleção manual e os filtros de escala/
