@@ -11,6 +11,7 @@ import { ExerciseProgression } from "../components/ExerciseProgression";
 import { usePractice } from "../lib/practice-state";
 import { MetronomePanel } from "../components/MetronomePanel";
 import { DrumPanel } from "../components/DrumPanel";
+import { ExerciseGuide } from "../components/ExerciseGuide";
 
 async function openExternal(url: string) {
   if (isNative) {
@@ -129,14 +130,7 @@ export function Exercise({ id }: { id: string }) {
               )}
             </>
           ) : (
-            <div className="empty" style={{ minHeight: 220 }}>
-              <div>
-                <h2>Sem tab para este</h2>
-                <p style={{ margin: 0, maxWidth: 360 }}>
-                  Aqui as notas dependem da música ou do que você está estudando. Use o metrônomo e a descrição.
-                </p>
-              </div>
-            </div>
+            <ExerciseGuide id={id} setBpm={m.setBpm} />
           )}
         </section>
 
