@@ -243,7 +243,7 @@ fn validate_sequence(v: &Value) -> StoreResult<()> {
     if id.trim().is_empty() || id.len()>128 || name.trim().is_empty() || name.chars().count()>80 { return Err("Nome ou ID de sequência inválido.".into()); }
     ms(string(v,"updatedAt")?)?; opt_bool(v,"deleted")?;
     let level = |x: &Value| x.as_f64().is_some_and(|n| n.is_finite() && (0.0..=1.0).contains(&n));
-    if !v["bpm"].as_f64().is_some_and(|n| n.is_finite() && (20.0..=400.0).contains(&n)) || !level(&v["volume"]) || !level(&v["clickVolume"]) || !v["click"].is_boolean() || !level(&v["drums"]["volume"]) || !v["drums"]["enabled"].is_boolean() || !["rock","reggae","indie","metal","ska","afrobeat","simple4","simple8"].contains(&string(&v["drums"],"pattern")?) { return Err("Configuração da sequência inválida.".into()); }
+    if !v["bpm"].as_f64().is_some_and(|n| n.is_finite() && (20.0..=400.0).contains(&n)) || !level(&v["volume"]) || !level(&v["clickVolume"]) || !v["click"].is_boolean() || !level(&v["drums"]["volume"]) || !v["drums"]["enabled"].is_boolean() || !["rock","reggae","indie","metal","ska","afrobeat","simple4","simple8","funk","disco","bossa","dnb"].contains(&string(&v["drums"],"pattern")?) { return Err("Configuração da sequência inválida.".into()); }
     let steps = v["steps"].as_array().filter(|a| a.len()<=16).ok_or("Sequência grande demais.")?;
     let mut ids=std::collections::HashSet::new();
     for step in steps {

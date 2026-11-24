@@ -205,7 +205,7 @@ export function createWebEngine(emit: Emit) {
         }
       };
       if (mask & 4) release(3);
-      for (let i = 0; i < 5; i++) if (mask & (1 << i)) {
+      for (let i = 0; i < DRUM_INSTRUMENTS.length; i++) if (mask & (1 << i)) {
         release(i);
         const bus = drumBus, gain = ctx.createGain(); gain.connect(bus);
         const voice = scheduleSource(drumBanks.get(i)!, gain, point.when);
