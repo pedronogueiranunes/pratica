@@ -2,6 +2,7 @@ import { useApp } from "../lib/app-state";
 import { MetronomePanel } from "../components/MetronomePanel";
 import { TunerPanel } from "../components/TunerPanel";
 import { DrumPanel } from "../components/DrumPanel";
+import { CircleOfFifths } from "../components/CircleOfFifths";
 import { FretboardExplorer } from "../components/FretboardExplorer";
 
 export function Tools() {
@@ -16,6 +17,7 @@ export function Tools() {
         <TunerPanel />
       </div>
       <DrumPanel />
+      <CircleOfFifths />
       <FretboardExplorer />
     </div>
   );

@@ -33,3 +33,4 @@ export * from "./music-transfer";
 
 export * from "./chromagram";
 
+export * from "./circle-of-fifths";
