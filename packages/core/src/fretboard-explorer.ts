@@ -2,6 +2,8 @@ import { fretMidi, type Diagram, type StringNo } from "./fretboard";
 import { chordTones } from "./chord-shapes";
 import { chordNoteName } from "./chord-voicing";
 import { noteIndex, transposeNote } from "./chords";
+import type { NoteReading } from "./audio";
+import { tuningStatus } from "./tuner";
 
 export interface FretPosition { string: StringNo; fret: number }
 export interface FretPitch extends FretPosition { midi: number; pc: number; label: string }
@@ -27,6 +29,18 @@ export function fretPitch(position: FretPosition, flats = false, chord?: string)
 }
 export function fretboardPitches(flats = false): FretPitch[] {
   return FRETBOARD_STRINGS.flatMap((string) => Array.from({ length: 25 }, (_, fret) => fretPitch({ string, fret }, flats)));
+}
+/** Altura exata, sem inferir a corda. Rejeita silêncio e leituras sem confiança. */
+export function detectedFretPositions(running: boolean, reading: NoteReading | null, clarity: number, level: number): FretPosition[] {
+  const status = tuningStatus(running, reading, clarity, level);
+  if (!reading || !["flat", "sharp", "inTune"].includes(status)
+    || !Number.isFinite(clarity) || !Number.isFinite(level)
+    || !Number.isInteger(reading.midi) || !Number.isFinite(reading.cents)
+    || !Number.isFinite(reading.frequency) || reading.frequency <= 0) return [];
+  return FRETBOARD_STRINGS.flatMap((string) => {
+    const fret = reading.midi - fretPitch({ string, fret: 0 }).midi;
+    return fret >= 0 && fret <= 24 ? [{ string, fret }] : [];
+  });
 }
 export function scaleTones(root: string, pattern: ScalePatternId): { root: number; pcs: number[] } | null {
   const pc = noteIndex(root), scale = SCALE_PATTERNS.find((s) => s.id === pattern);

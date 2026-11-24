@@ -1,17 +1,22 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { chordNoteName, chordTones, FRETBOARD_STRINGS, fretboardPitches, fretFrequencies, fretPitch, identifyFretChord, SCALE_PATTERNS, scaleTones, selectFret, shapesFor, type Diagram, type FretPosition, type ScalePatternId, type StringNo } from "@gx/core";
+import { chordNoteName, chordTones, detectedFretPositions, FRETBOARD_STRINGS, fretboardPitches, fretFrequencies, fretPitch, identifyFretChord, SCALE_PATTERNS, scaleTones, selectFret, shapesFor, type Diagram, type FretPosition, type ScalePatternId, type StringNo } from "@gx/core";
 import { useApp } from "../lib/app-state";
 import { engine, onEngine } from "../lib/engine";
 import { IconPlay } from "../icons";
+import { useTuner } from "../lib/tuner";
 
 const key = (p: FretPosition) => `${p.string}:${p.fret}`;
 const NOTES = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
 type Mode = "all" | "chord" | "scale";
 const W = 52, H = 48, X = 64, Y = 48;
 
-/** Braço de afinação padrão. Seleção manual, sem estimar notas ou pedir microfone. */
+/** Braço padrão com seleção manual e observação da entrada compartilhada do afinador. */
 export function FretboardExplorer({ diagram, embedded = false }: { diagram?: Diagram; embedded?: boolean }) {
   const { settings } = useApp();
+  const tuner = useTuner();
+  const [follow, setFollow] = useState(false);
+  const detected = follow && !tuner.pending ? detectedFretPositions(tuner.running, tuner.reading, tuner.clarity, tuner.level) : [];
+  const detectedKeys = new Set(detected.map(key));
   const [mode, setMode] = useState<Mode>(diagram ? "chord" : "all");
   const [chord, setChord] = useState(diagram?.name ?? "C"), [root, setRoot] = useState("A");
   const [scale, setScale] = useState<ScalePatternId>("minor-pentatonic"), [flats, setFlats] = useState(false);
@@ -71,6 +76,16 @@ export function FretboardExplorer({ diagram, embedded = false }: { diagram?: Dia
     {!embedded && <h2>Braço</h2>}
     <p className="muted small">Afinação padrão, 24 casas. Mi agudo em cima. Selecione uma nota por corda para identificar um acorde.</p>
     <div className="fret-controls">
+      <label className="inline-check"><input type="checkbox" checked={follow} onChange={(e) => { stop(); setFollow(e.target.checked); }} />Seguir notas do afinador</label>
+      {follow && <button className="btn" onClick={tuner.toggle}>{tuner.pending ? "Cancelar entrada" : tuner.running ? "Desligar entrada" : "Ligar entrada"}</button>}
+    </div>
+    {follow && <div className="fret-input">
+      <p className="num">{detected.length && tuner.reading ? `${fretPitch(detected[0]!, flats).label} · ${tuner.reading.cents > 0 ? "+" : ""}${Math.round(tuner.reading.cents)} cents` : tuner.pending ? "Abrindo entrada…" : !tuner.running ? "Entrada desligada." : tuner.status === "weak" ? "Sinal baixo. Toque uma nota mais forte." : tuner.status === "unstable" ? "Toque uma nota por vez." : tuner.reading && ["flat", "sharp", "inTune"].includes(tuner.status) ? "Nota fora das 24 casas." : "Aguardando uma nota."}</p>
+      <p className="small muted">O anel externo marca a altura captada, em todas as posições possíveis. O áudio não identifica a corda. Entrada e referência Lá são as mesmas do afinador; desligar aqui também desliga lá. Não há retorno do microfone nas caixas.</p>
+      <p className="small muted">Desmarcar ou sair da tela mantém a entrada ligada. Use Desligar entrada para encerrar.</p>
+      {tuner.error && <p role="alert" className="error-text">{tuner.error} Confira a entrada em Ferramentas ou Ajustes e tente novamente.</p>}
+    </div>}
+    <div className="fret-controls">
       <label>Destacar<select aria-label="Destacar no braço" value={mode} onChange={(e) => setMode(e.target.value as Mode)}><option value="all">Todas as notas</option><option value="chord">Acorde</option><option value="scale">Escala</option></select></label>
       {mode === "chord" && <><label>Acorde<input type="text" aria-label="Acorde no braço" value={chord} onChange={(e) => setChord(e.target.value)} maxLength={64} /></label><button className="btn" disabled={!chordInfo} onClick={loadShape}>Usar uma forma</button></>}
       {mode === "scale" && <><label>Fundamental<select aria-label="Fundamental da escala" value={root} onChange={(e) => setRoot(e.target.value)}>{NOTES.map((n) => <option key={n}>{n}</option>)}</select></label><label>Escala<select aria-label="Escala no braço" value={scale} onChange={(e) => setScale(e.target.value as ScalePatternId)}>{SCALE_PATTERNS.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label></>}
@@ -87,11 +102,12 @@ export function FretboardExplorer({ diagram, embedded = false }: { diagram?: Dia
         </g>
         {FRETBOARD_STRINGS.map((s) => <g key={s} role="row" aria-rowindex={s} aria-label={`Corda ${s}`}>
           {map.filter((p) => p.string === s).map((p) => {
-            const id = key(p), chosen = selectionKeys.has(id), highlighted = mode === "all" || pcs.has(p.pc), isRoot = p.pc === fundamental;
+            const id = key(p), chosen = selectionKeys.has(id), heard = detectedKeys.has(id), highlighted = mode === "all" || pcs.has(p.pc) || heard, isRoot = p.pc === fundamental;
             const label = mode === "chord" && pcs.has(p.pc) ? fretPitch(p, flats, chord.trim()).label : p.label;
             const note = mode === "chord" && pcs.has(p.pc) ? chordNoteName(chord.trim(), p.pc) : label.replace(/-?\d+$/, "");
-            return <g key={id} ref={(el) => { if (el) cells.current.set(id, el); else cells.current.delete(id); }} role="gridcell" aria-colindex={p.fret + 1} aria-selected={chosen} aria-label={`${label}, corda ${s}, casa ${p.fret}`} tabIndex={focus === id ? 0 : -1} transform={`translate(${X + p.fret * W} ${Y + (s - 1) * H})`} className={`fret-cell${chosen ? " chosen" : ""}${highlighted ? " highlighted" : ""}${isRoot ? " root" : ""}${chosen && sounding ? " sounding" : ""}`} onFocus={() => setFocus(id)} onKeyDown={(e) => keyboard(e, p)} onClick={(e) => { e.currentTarget.focus(); setFocus(id); toggle(p); }}>
+            return <g key={id} ref={(el) => { if (el) cells.current.set(id, el); else cells.current.delete(id); }} role="gridcell" aria-colindex={p.fret + 1} aria-selected={chosen} aria-label={`${label}, corda ${s}, casa ${p.fret}${heard ? ", nota captada" : ""}`} tabIndex={focus === id ? 0 : -1} transform={`translate(${X + p.fret * W} ${Y + (s - 1) * H})`} className={`fret-cell${chosen ? " chosen" : ""}${highlighted ? " highlighted" : ""}${isRoot ? " root" : ""}${chosen && sounding ? " sounding" : ""}`} onFocus={() => setFocus(id)} onKeyDown={(e) => keyboard(e, p)} onClick={(e) => { e.currentTarget.focus(); setFocus(id); toggle(p); }}>
               <rect className="fret-hit" x={-W / 2} y={-H / 2} width={W} height={H} rx={6} /><circle r={18} /><text dy=".35em" textAnchor="middle">{note}</text>
+              {heard && <circle className="fret-detected" r={22} aria-hidden="true" />}
             </g>;
           })}
         </g>)}
@@ -99,11 +115,12 @@ export function FretboardExplorer({ diagram, embedded = false }: { diagram?: Dia
     </div>
     <p className="small muted">Fundamental com contorno laranja. Notas escolhidas preenchidas. Destaque de escala/acorde não é uma sugestão de digitação.</p>
     <div className="fret-controls">
-      <button className="btn primary" disabled={!selected.length || volume === 0} onClick={() => void play()}><IconPlay />Ouvir seleção</button>
+      <button className="btn primary" disabled={!selected.length || volume === 0 || follow} onClick={() => void play()}><IconPlay />Ouvir seleção</button>
       <button className="btn" disabled={!selected.length} onClick={() => { stop(); setSelected([]); }}>Limpar notas</button>
       {diagram && <button className="btn" onClick={() => { stop(); setSelected(diagram.notes.map((n) => ({ string: n.string, fret: n.fret }))); }}>Repor forma da cifra</button>}
       <label className="chord-preview-volume">Volume<input type="range" min="0" max="100" step="5" aria-label="Volume do braço" value={volume * 100} onChange={(e) => { stop(); setVolume(Number(e.target.value) / 100); }} /><span className="num">{Math.round(volume * 100)}%</span></label>
     </div>
+    {follow && <p className="small muted">Desmarque Seguir notas para ouvir a seleção sem captar o som da própria prévia.</p>}
     <div className="fret-result" role="status">
       <p>{selected.length ? `Notas: ${selected.map((p) => fretPitch(p, flats).label).join(" · ")}` : "Nenhuma nota escolhida."}</p>
       {selected.length > 0 && <p>{matches.length ? `Compatíveis: ${matches.map((m) => m.name).join(" · ")}` : "Sem correspondência exata no catálogo. Nenhuma nota foi completada."}</p>}

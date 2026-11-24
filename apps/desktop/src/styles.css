@@ -2395,6 +2395,9 @@ button.chord-tile[aria-pressed="true"] {
 .fret-cell:focus-visible .fret-hit { stroke: var(--accent); stroke-width: 3; }
 .fret-cell:hover .fret-hit { fill: color-mix(in srgb, var(--accent) 8%, transparent); }
 .fret-cell.sounding circle { stroke: var(--fg); stroke-width: 3; }
+.fret-cell circle.fret-detected { fill: none; stroke: var(--in-tune); stroke-width: 3; pointer-events: none; }
+.fret-input { margin: 16px 0; }
+.fret-input > p { margin: 8px 0; }
 .fret-result { font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
 .fret-result p { margin: 8px 0; }
 .fret-explorer .btn.primary { color: #161616; }
