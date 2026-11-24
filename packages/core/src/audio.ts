@@ -77,3 +77,22 @@ export type EngineEvent =
   | { type: "tunerStream"; deviceId: string; channel: number; channels: number; sampleRate: number; bufferFrames: number | null; source: "nativeTimestamp" | "browserReported" }
   | { type: "error"; code: EngineErrorCode; message: string; direction?: "input" | "output" }
   | { type: "measureState"; running: boolean; measured: number; failed: string[]; busy: boolean };
+
+export const MAX_OUTPUT_CHANNEL = 128;
+/** Mapa interface → canal de saída. 0 = todos os canais (padrão), n = só o canal n. */
+export function validOutputChannels(v: unknown): v is Record<string, number> {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+  const entries = Object.entries(v as Record<string, unknown>);
+  return entries.length <= 128 && entries.every(([id, ch]) => id.length > 0 && id.length <= 512 && typeof ch === "number" && Number.isInteger(ch) && ch >= 0 && ch <= MAX_OUTPUT_CHANNEL);
+}
+/** Opções de canal de saída para uma interface com `count` canais. */
+export function outputChannelOptions(count: number): { value: number; label: string }[] {
+  const n = Number.isInteger(count) && count > 0 ? Math.min(count, MAX_OUTPUT_CHANNEL) : 0;
+  if (n <= 1) return [];
+  return [{ value: 0, label: n === 2 ? "1 e 2 (estéreo)" : "Todos" }, ...Array.from({ length: n }, (_, i) => ({ value: i + 1, label: `Só ${i + 1}` }))];
+}
+/** Opções de canal de entrada (índice 0-based, como o afinador já usa). */
+export function inputChannelOptions(count: number): { value: number; label: string }[] {
+  const n = Number.isInteger(count) && count > 0 ? Math.min(count, 255) : 0;
+  return n <= 1 ? [] : Array.from({ length: n }, (_, i) => ({ value: i, label: `Entrada ${i + 1}` }));
+}

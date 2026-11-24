@@ -89,6 +89,8 @@ export interface Settings {
     accentFirstBeat: boolean;
     progression: "auto" | "manual";
     outputDeviceId?: string;
+    /** Canal de saída por interface: 0 = todos, n = só o canal n. Local a este aparelho. */
+    outputChannels?: Record<string, number>;
   };
   tuner: {
     a4: number;

@@ -25,6 +25,7 @@ Um app para a prática diária de guitarra, focado em dexteridade, acordes e esc
 16. **Inversões e variações de acordes (implementadas localmente, 23/11/2026):** selecionar baixo/inversão, formas em outras posições e variações harmônicas, mantendo diagrama, som e pauta coerentes. Até seis formas validadas; limites em `07-acordes-som-e-partitura.md`.
 17. **Sequenciador de acordes (implementado, 23/11/2026):** adicionar até 16 formas exatas, definir 1/2/4/8 tempos, reordenar e ouvir em loop no BPM do metrônomo. Salvar por nome e eventos, recuperar sem autoplay e transferir pelo pacote JSON. Ver `09-sequenciador.md` e `10-bateria-e-sequencias-salvas.md`.
 18. **Bateria de acompanhamento (implementado localmente, 23/11/2026):** ligar/desligar padrões originais de rock, reggae, indie rock, metal, ska, afrobeat e dois loops simples, em 4/4. Volume próprio ao vivo, independente do metrônomo e dos acordes, com relógio compartilhado; também utilizável sem sequência em Ferramentas e no exercício. Ver `10-bateria-e-sequencias-salvas.md`.
+19. **Canais por interface (implementado localmente, 24/11/2026):** escolher em Ajustes o canal de entrada e o canal de saída de cada interface de áudio, lembrados por interface neste aparelho.
 
 ## Pontos técnicos que o desenvolvimento precisa resolver cedo
 

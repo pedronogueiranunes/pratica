@@ -61,6 +61,10 @@ export function MetronomeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => () => clearTicks(), []);
 
+  // O motor guarda o canal de saída de cada interface; manda o mapa sempre que mudar.
+  const outputChannels = settings.metronome.outputChannels;
+  useEffect(() => { void engine.setOutputChannels(outputChannels ?? {}).catch(() => {}); }, [outputChannels]);
+
   useEffect(() => {
     if (running) void engine.updateMetronome(engineSettings);
   }, [engineSettings, running]);

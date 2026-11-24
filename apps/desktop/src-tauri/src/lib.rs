@@ -43,6 +43,11 @@ fn chord_preview(audio: State<Audio>, device_id: Option<String>, frequencies: Ve
 }
 #[tauri::command]
 fn chord_preview_stop(audio: State<Audio>) { audio.0.stop_preview(); }
+#[tauri::command]
+fn audio_output_channels(audio: State<Audio>, channels: std::collections::HashMap<String, u16>) -> Result<(), String> {
+    if channels.len() > 128 || channels.values().any(|&c| c > 128) { return Err("Canais de saída inválidos.".into()); }
+    audio.0.set_output_channels(channels); Ok(())
+}
 
 #[tauri::command]
 fn sequence_start(audio: State<Audio>, device_id: Option<String>, settings: MetronomeSettings, steps: Vec<audio_engine::sequence::SequenceStep>, volume: f32, click: bool, run_id: u32, drums: Option<audio_engine::drums::DrumConfig>) -> Result<(), String> {
@@ -117,6 +122,7 @@ pub fn run() {
             metronome_stop,
             chord_preview,
             chord_preview_stop,
+            audio_output_channels,
             sequence_start,
             sequence_mixer,
             tuner_start,

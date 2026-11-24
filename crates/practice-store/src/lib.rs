@@ -416,6 +416,11 @@ pub fn validate_event(e: &Value) -> StoreResult<()> {
     }
     Ok(())
 }
+/// Mapa interface → canal de saída (0 = todos, n = só o canal n), igual ao core.
+fn valid_output_channels(value: &Value) -> bool {
+    value.as_object().is_some_and(|m| m.len() <= 128 && m.iter().all(|(id, ch)| !id.is_empty() && id.len() <= 512 && ch.as_u64().is_some_and(|c| c <= 128)))
+}
+
 fn valid_input_profiles(value: &Value) -> bool {
     let Some(profiles) = value.as_array() else { return false };
     let mut ids = std::collections::HashSet::new();
@@ -459,6 +464,7 @@ fn validate_setting(c: &Value) -> StoreResult<()> {
         "tuner.a4" => num(430., 450.),
         "tuner.inputChannel" => num(0., 255.) && x.as_u64().is_some(),
         "tuner.inputProfiles" => raw.starts_with("device:") && valid_input_profiles(x),
+        "metronome.outputChannels" => raw.starts_with("device:") && valid_output_channels(x),
         "metronome.outputDeviceId" | "tuner.inputDeviceId" => x.is_null() || x.is_string(),
         _ => false,
     };

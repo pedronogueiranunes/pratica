@@ -1,4 +1,4 @@
-import type { Theme } from "@gx/core";
+import { inputChannelOptions, outputChannelOptions, type Theme } from "@gx/core";
 import { useApp } from "../lib/app-state";
 import { suggestion, useDevices } from "../lib/devices";
 import { usePractice } from "../lib/practice-state";
@@ -16,6 +16,12 @@ export function Settings() {
   const outputs = devices.filter((d) => d.isOutput && d.outputChannels > 0);
   const inSuggest = suggestion(instrument, settings.tuner.inputDeviceId, devices, true);
   const outSuggest = suggestion(playback, settings.metronome.outputDeviceId, devices, false);
+  const outId = settings.metronome.outputDeviceId, inId = settings.tuner.inputDeviceId;
+  const outChannels = settings.metronome.outputChannels ?? {};
+  const outOptions = outputChannelOptions(devices.find((d) => d.id === outId)?.outputChannels ?? 0);
+  const outChannel = outId ? outChannels[outId] ?? 0 : 0;
+  const inOptions = inputChannelOptions(devices.find((d) => d.id === inId)?.inputChannels ?? 0);
+  const inChannel = settings.tuner.inputChannel;
   const nameOf = (id: string) => devices.find((d) => d.id === id)?.name ?? id;
   // O selo só aparece onde diz algo: o melhor da lista e avisos de Bluetooth.
   const reason = (id: string, list: typeof instrument) => {
@@ -110,6 +116,13 @@ export function Settings() {
               ))}
             </select>
           </div>
+          {outId && (outOptions.length > 0 || outChannel > 0) && <div className="field">
+            <label htmlFor="out-ch">Canal de saída</label>
+            <select id="out-ch" value={outChannel} onChange={(e) => update({ metronome: { outputChannels: { ...outChannels, [outId]: Number(e.target.value) } } })}>
+              {outChannel > 0 && !outOptions.some((o) => o.value === outChannel) && <option value={outChannel}>Só {outChannel} (indisponível)</option>}
+              {outOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>}
           <div className="field">
             <label htmlFor="in">{t("devices.input")}</label>
             <select
@@ -125,6 +138,13 @@ export function Settings() {
               ))}
             </select>
           </div>
+          {inId && (inOptions.length > 0 || inChannel > 0) && <div className="field">
+            <label htmlFor="in-ch">Canal de entrada</label>
+            <select id="in-ch" value={inChannel} onChange={(e) => { const channel = Number(e.target.value); const profiles = settings.tuner.inputProfiles; update({ tuner: { inputChannel: channel, ...(profiles.some((p) => p.deviceId === inId) ? { inputProfiles: profiles.map((p) => p.deviceId === inId ? { ...p, channel } : p) } : {}) } }); }}>
+              {inChannel > 0 && !inOptions.some((o) => o.value === inChannel) && <option value={inChannel}>Entrada {inChannel + 1} (indisponível)</option>}
+              {inOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>}
 
           {measuring && <p className="muted small" role="status">Abrindo cada entrada e saída por um instante, em silêncio. Leva alguns segundos.</p>}
           {measureResult && !measuring && <p className={`small ${measureResult.busy ? "error-text" : "muted"}`} role="status">

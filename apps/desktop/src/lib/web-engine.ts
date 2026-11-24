@@ -31,6 +31,8 @@ export function createWebEngine(emit: Emit) {
   let ctx: Sink | null = null;
   let master: GainNode | null = null;
   let output: WaveShaperNode | null = null;
+  let panner: StereoPannerNode | null = null;
+  let outputRoutes: Record<string, number> = {};
   let banks = new Map<string, AudioBuffer>();
   let bankSound: ClickSoundName | null = null;
   let previewGeneration = 0;
@@ -136,6 +138,7 @@ export function createWebEngine(emit: Emit) {
       output.curve = curve;
       master.connect(output); output.connect(ctx.destination);
     }
+    applyRoute(deviceId);
     // Precisa começar dentro do gesto, antes de aguardar seleção de saída.
     // Também retoma o contexto interrupted do Safari em um novo toque.
     const resumed = ctx.resume();
@@ -152,6 +155,15 @@ export function createWebEngine(emit: Emit) {
     const result = await ready;
     if (!result.ok) throw result.error;
     return ctx;
+  }
+
+  /** No navegador só há estéreo garantido: canal 1 ou 2 vira pan total, sem perder nível. */
+  function applyRoute(deviceId: string | null) {
+    if (!ctx || !output) return;
+    const ch = deviceId ? outputRoutes[deviceId] ?? 0 : 0;
+    output.disconnect(); panner?.disconnect(); panner = null;
+    if (ch === 1 || ch === 2) { panner = ctx.createStereoPanner(); panner.pan.value = ch === 1 ? -1 : 1; output.connect(panner); panner.connect(ctx.destination); }
+    else output.connect(ctx.destination);
   }
 
   function buildBanks(sound: ClickSoundName) {
@@ -305,6 +317,7 @@ export function createWebEngine(emit: Emit) {
 
   return {
     devices: listDevices,
+    setOutputChannels(map: Record<string, number>) { outputRoutes = { ...map }; applyRoute(outputDevice ?? null); },
     stopPreview,
     stopSequence: stopTransport,
     async startSequence(deviceId: string | null, s: MetronomeSettings, steps: AudioSequenceStep[], volume: number, click: boolean, runId: number, drums: AudioDrums = compileDrums(defaultDrums)) {

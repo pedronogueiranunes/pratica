@@ -1,6 +1,7 @@
 import { defaultSettings, type PracticeRecord, type Settings } from "./types";
 import { validateSavedSequence } from "./saved-sequence";
 import { validInputProfiles } from "./tuner";
+import { validOutputChannels } from "./audio";
 import { validateChartRevision, validatePlaylist, validateSong } from "./songs";
 import type { PracticeEvent, StoredEvent, SavedRoutine, SettingChange, SettingsPatch } from "./store";
 
@@ -35,7 +36,7 @@ export function flattenSettings(patch: SettingsPatch, deviceId: string): Setting
     if (obj(value)) {
       for (const [sub, item] of Object.entries(value)) {
         const path = `${key}.${sub}`;
-        const local = ["metronome.outputDeviceId", "tuner.inputDeviceId", "tuner.inputChannel", "tuner.inputProfiles"].includes(path);
+        const local = ["metronome.outputDeviceId", "tuner.inputDeviceId", "tuner.inputChannel", "tuner.inputProfiles", "metronome.outputChannels"].includes(path);
         changes.push({ key: local ? `device:${deviceId}:${path}` : path, value: item ?? null });
       }
     } else changes.push({ key, value });
@@ -61,6 +62,7 @@ export function validateSetting(v: unknown): asserts v is SettingChange {
     : key === "tuner.a4" ? num(430, 450)
     : key === "tuner.inputChannel" ? num(0, 255) && Number.isInteger(x)
     : key === "tuner.inputProfiles" ? v.key.startsWith("device:") && validInputProfiles(x)
+    : key === "metronome.outputChannels" ? v.key.startsWith("device:") && validOutputChannels(x)
     : ["metronome.outputDeviceId", "tuner.inputDeviceId"].includes(key) ? x === null || typeof x === "string" : false;
   if (!valid) throw new Error("Ajuste inválido.");
 }

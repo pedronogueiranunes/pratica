@@ -3,7 +3,7 @@ export * from "./catalog";
 export * from "./routine";
 export * from "./progression";
 export * from "./i18n";
-export type * from "./audio";
+export * from "./audio";
 export type * from "./music-source";
 export * from "./fretboard";
 export * from "./fretboard-explorer";

@@ -16,7 +16,8 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, InterfaceType, SampleFormat, SizedSample};
 use serde::Serialize;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU16, AtomicU32, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -82,6 +83,8 @@ enum Command {
     StartSequence { device_id: Option<String>, settings: MetronomeSettings, plan: SequencePlan },
     Preview { device_id: Option<String>, frequencies: Vec<f32>, volume: f32 },
     StopPreview,
+    /// Canal de saída por interface (0 = todos os canais, como antes; n = só o canal n).
+    SetOutputChannels(HashMap<String, u16>),
     StartMetronome { device_id: Option<String>, settings: MetronomeSettings },
     UpdateMetronome(MetronomeSettings),
     StopMetronome,
@@ -136,6 +139,8 @@ impl EngineHandle {
         let _ = self.tx.send(Command::Preview { device_id, frequencies, volume });
     }
     pub fn stop_preview(&self) { let _ = self.tx.send(Command::StopPreview); }
+    /// Canal de saída por interface. Vale para metrônomo, prévia, sequência e bateria.
+    pub fn set_output_channels(&self, channels: HashMap<String, u16>) { let _ = self.tx.send(Command::SetOutputChannels(channels)); }
     /// Abre cada entrada e saída por um instante para medir o atraso real.
     /// Recusa enquanto o metrônomo ou o afinador estiverem ligados.
     pub fn measure_latency(&self) {
@@ -269,6 +274,8 @@ struct MetronomeStream {
     settings: MetronomeSettings,
     latency_ms: Arc<AtomicU32>,
     last_latency: f32,
+    channels: u16,
+    route: Arc<AtomicU16>,
 }
 
 struct TunerStream {
@@ -293,6 +300,7 @@ struct EngineThread {
     tuner: Option<TunerStream>,
     spectrum_enabled: bool,
     errors_tx: Sender<(Direction, String)>,
+    output_channels: HashMap<String, u16>,
     errors_rx: mpsc::Receiver<(Direction, String)>,
     known_devices: Vec<String>,
     last_poll: Instant,
@@ -307,6 +315,7 @@ impl EngineThread {
             tuner: None,
             spectrum_enabled: false,
             errors_tx,
+            output_channels: HashMap::new(),
             errors_rx,
             known_devices: Vec::new(),
             last_poll: Instant::now() - DEVICE_POLL,
@@ -377,6 +386,18 @@ impl EngineThread {
                     m.preview_until = Some(Instant::now() + Duration::from_secs(2));
                     if m.cmd.push(AudioCmd::Preview(plan)).is_err() {
                         self.error(ErrorCode::StreamFailed, "Aguarde um instante e toque de novo.");
+                    }
+                }
+            }
+            Command::SetOutputChannels(map) => {
+                self.output_channels = map;
+                if let Some(m) = self.metronome.as_ref() {
+                    let ch = self.output_channels.get(&m.device_id).copied().unwrap_or(0);
+                    if ch > m.channels {
+                        m.route.store(0, Ordering::Relaxed);
+                        self.error(ErrorCode::StreamFailed, format!("A saída não tem canal {ch}. Tocando em todos os canais; escolha outro em Ajustes."));
+                    } else {
+                        m.route.store(ch, Ordering::Relaxed);
                     }
                 }
             }
@@ -617,6 +638,9 @@ impl EngineThread {
         let sample_rate = config.sample_rate;
         if !(8000..=192000).contains(&sample_rate) { return Err((ErrorCode::UnsupportedFormat, "Taxa de saída não suportada.".into())); }
         if config.channels == 0 || config.channels > 128 { return Err((ErrorCode::UnsupportedFormat, "Saída com número de canais não suportado.".into())); }
+        let wanted = self.output_channels.get(&id).copied().unwrap_or(0);
+        if wanted > config.channels { return Err((ErrorCode::StreamFailed, format!("A saída não tem canal {wanted}. Escolha outro canal em Ajustes."))); }
+        let route = Arc::new(AtomicU16::new(wanted));
 
         let (cmd_tx, cmd_rx) = rtrb::RingBuffer::<AudioCmd>::new(64);
         let (tick_tx, tick_rx) = rtrb::RingBuffer::<(Tick, f32)>::new(256);
@@ -643,6 +667,7 @@ impl EngineThread {
             garbage: garbage_tx,
             scratch: vec![0.0; 16_384],
             latency: latency.clone(),
+            route: route.clone(),
         };
 
         let errors = self.errors_tx.clone();
@@ -671,6 +696,8 @@ impl EngineThread {
             settings: settings.sanitized(),
             latency_ms: latency,
             last_latency: 0.0,
+            channels: config.channels,
+            route,
         })
     }
 
@@ -744,6 +771,8 @@ struct OutputCtx {
     garbage: rtrb::Producer<Box<ClickBank>>,
     scratch: Vec<f32>,
     latency: Arc<AtomicU32>,
+    /// 0 = todos os canais; n = só o canal n (1-based). Lido sem lock na callback.
+    route: Arc<AtomicU16>,
 }
 
 fn build_output<T>(
@@ -816,6 +845,7 @@ where
                 });
                 let mut next_attack = 0;
                 let bpm = ctx.metro.settings().bpm;
+                let route = ctx.route.load(Ordering::Relaxed) as usize;
                 for (frame_index, frame) in buf.chunks_exact_mut(channels).enumerate() {
                     if next_attack < attack_count {
                         if let Some((at, plan)) = attacks[next_attack] {
@@ -827,7 +857,10 @@ where
                     let backing = ctx.sequence_preview.sample() * ctx.sequence_gain + ctx.drums.sample();
                     let target = ctx.click_target;
                     ctx.click_gain += (target - ctx.click_gain).clamp(-1.0 / (sample_rate * 0.01), 1.0 / (sample_rate * 0.01));
-                    for sample in frame { *sample = (*sample * ctx.click_gain + preview + backing).clamp(-0.98, 0.98); }
+                    for (c, sample) in frame.iter_mut().enumerate() {
+                        let mixed = (*sample * ctx.click_gain + preview + backing).clamp(-0.98, 0.98);
+                        *sample = routed(route, c, mixed);
+                    }
                 }
                 for (o, sample) in chunk.iter_mut().zip(buf.iter()) { *o = T::from_sample(*sample); }
                 offset += chunk.len() / channels;
@@ -838,6 +871,27 @@ where
         },
         None,
     )
+}
+
+/// Saída roteada: com `route == 0` toca em todos os canais; com `route == n`, só no canal n (1-based).
+#[inline]
+fn routed(route: usize, channel: usize, sample: f32) -> f32 {
+    if route == 0 || route == channel + 1 { sample } else { 0.0 }
+}
+
+#[cfg(test)]
+mod routing_tests {
+    use super::routed;
+    #[test]
+    fn todos_os_canais_por_padrao() {
+        assert_eq!((0..4).map(|c| routed(0, c, 0.5)).collect::<Vec<_>>(), vec![0.5; 4]);
+    }
+    #[test]
+    fn so_o_canal_escolhido() {
+        assert_eq!((0..2).map(|c| routed(1, c, 0.5)).collect::<Vec<_>>(), vec![0.5, 0.0]);
+        assert_eq!((0..2).map(|c| routed(2, c, 0.5)).collect::<Vec<_>>(), vec![0.0, 0.5]);
+        assert_eq!((0..2).map(|c| routed(3, c, 0.5)).collect::<Vec<_>>(), vec![0.0, 0.0]);
+    }
 }
 
 struct InputCtx {

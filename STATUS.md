@@ -1,5 +1,12 @@
 # Status
 
+## Canais de entrada e saída por interface (24/11/2026)
+
+- Pedido do Pedro: escolher canais diferentes por interface (ex.: Scarlett Solo). Ajustes → Áudio ganhou **Canal de saída** (1 e 2 estéreo, Só 1, Só 2… ou Todos em interfaces com mais canais) e **Canal de entrada** (Entrada 1, 2…), visíveis quando há uma interface específica escolhida com mais de um canal. Uma entrada para tudo, como decidido: afinador, braço e cromagrama usam o mesmo canal.
+- Saída lembrada por interface em `metronome.outputChannels` (local ao aparelho, por evento, validado no core e no practice-store; sem tabela ou migração). Entrada: atualiza `tuner.inputChannel` e o canal do perfil daquela interface, quando ele existe; sem perfil salvo, a troca de interface volta ao canal 1.
+- Mac: o motor recebe o mapa (`audio_output_channels`) e a callback zera os canais não escolhidos via atômico, sem lock/alocação. Vale para metrônomo, prévia, sequência e bateria. Canal inexistente ao abrir dá erro claro; ao mudar com a saída aberta, avisa e toca em todos. Web: canal 1 ou 2 vira pan total no estéreo; acima de 2 canais o navegador toca em todos.
+- Executado aqui (VM Linux): testes novos do core (`output-channels.test.ts`, com shim) e typecheck do core/desktop. **Não executados:** cargo (inclui os testes novos de `routed`), vitest real, builds e teste com a Scarlett. Padrão sem escolha = comportamento anterior.
+
 ## Checkout alinhado e guia da cifra revisado, sem publicar (24/11/2026)
 
 - Git alinhado sem perda: tag `backup/pre-align-20261124-1111` no antigo HEAD `26749d9`, ramo `backup/wt-20261124-1111` e stash com o diretório inteiro, e cópia dos 76 arquivos alterados/novos em `.git/backup-wt-20261124-1111/`. Depois `git fetch` e `git reset --mixed origin/main` (`edefc23`). Sobraram só os 10 arquivos do guia da cifra pelo metrônomo. Sem reset --hard, clean ou push.

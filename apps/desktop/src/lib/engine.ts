@@ -62,6 +62,11 @@ export const engine = {
     if (isNative) { await hookNative(); return invoke("chord_preview", { deviceId, frequencies, volume }); }
     return web().previewChord(deviceId, frequencies, volume);
   },
+  /** Canal de saída por interface (0 = todos). Vale para todos os sons do app. */
+  async setOutputChannels(channels: Record<string, number>) {
+    if (isNative) { await hookNative(); return invoke("audio_output_channels", { channels }); }
+    web().setOutputChannels(channels);
+  },
   async stopPreview() {
     if (isNative) return invoke("chord_preview_stop");
     web().stopPreview();
