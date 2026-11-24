@@ -31,7 +31,13 @@ explorado na cifra, com casas reais do capo. Não encerra a 3C: falta ligar YIN
 ao braço, cromagrama experimental e avanço da cifra pelo metrônomo. Esses modos
 não são simulados por animações do bloco manual.
 
-## Como testar
+### Progresso da 3C em 24/11
+
+Segundo bloco implementado localmente: notas captadas pelo YIN destacadas no
+braço, usando a entrada compartilhada do afinador, sem inferir a corda ou mudar
+a seleção manual. Testes sintéticos e UI documentados em
+`13-notas-captadas-no-braco.md`. Ainda faltam cromagrama experimental e avanço
+da cifra pelo metrônomo; a 3C permanece parcial.
 - 3A: testes do core com cifras coladas que o Pedro fornecer; contrato SQLite/IndexedDB ampliado; testes Rust de revisões e evento desconhecido; no app, colar, corrigir, salvar, transpor e reabrir.
 - 3B: contrato de playlists; web offline após deploy aprovado; exportar no Mac e importar no Chrome; edição concorrente em dois Macs.
 - 3C: testes de identificação de acordes e cromagrama com sinais sintéticos; no app, tocar notas e acordes com a guitarra e conferir o destaque.
