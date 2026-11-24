@@ -1,5 +1,14 @@
 # Status
 
+## Amp com pedais, reconhecimento de acordes, guias e bateria nova (24/11/2026)
+
+- Pedro aprovou o push. Quatro commits na `main` (de `2224192` a `5b90dc7`) e deploy do Pages concluído com sucesso. O app instalado em Aplicativos tem a versão com tudo, compilada às 10:18.
+- **Amp:** aba própria na sidebar (só no Mac), knobs de Volume e Dry/Wet ao vivo, medidores de entrada e saída, osciloscópio e nove pedais (gate, overdrive, EQ, phaser, flanger, chorus, tremolo, delay, reverb) em Rust. Pedro ouviu o amp funcionando; os pedais ainda não foram ouvidos por ele. Detalhes em `docs/16-amp-e-pedais.md`.
+- **Reconhecimento de acorde:** painel na Biblioteca de Acordes (só no Mac) com inversão pelo baixo, média no tempo e barra de notas. Validado só com sinais sintéticos. Detalhes em `docs/17-reconhecimento-de-acordes.md`.
+- **Rotina diária:** guias para os 29 exercícios sem tab. **Bateria:** 12 estilos e som novo, espelhados em TS e Rust. Detalhes em `docs/18-guias-de-exercicios-e-bateria.md`.
+- Verificações: 233 testes core, 39 audio-engine e 11 practice-store, typecheck e `pnpm build:app` passaram. Não rodei a suíte de navegador nem o Clippy nesta rodada.
+- Pendentes físicos: ouvir os pedais e os doze estilos de bateria, testar o reconhecimento com violão real, teste longo e latência do Amp, confirmar a licença do modelo JCM800 e as pendências antigas (afinador com áudio real, iCloud entre dois Macs, Laboratório, iPhone).
+
 ## Canais de entrada e saída por interface (24/11/2026)
 
 - Pedido do Pedro: escolher canais diferentes por interface (ex.: Scarlett Solo). Ajustes → Áudio ganhou **Canal de saída** (1 e 2 estéreo, Só 1, Só 2… ou Todos em interfaces com mais canais) e **Canal de entrada** (Entrada 1, 2…), visíveis quando há uma interface específica escolhida com mais de um canal. Uma entrada para tudo, como decidido: afinador, braço e cromagrama usam o mesmo canal.
