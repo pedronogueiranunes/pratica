@@ -142,3 +142,14 @@ export const IconChords = (p: P) => (
     <circle cx="15" cy="14.2" r="1.6" fill="currentColor" stroke="none" />
   </Base>
 );
+
+/** Amp: combo com alto-falante e knobs. */
+export const IconAmp = (p: P) => (
+  <Base {...p}>
+    <rect x="3" y="4" width="14" height="12" rx="2" />
+    <circle cx="10" cy="11.2" r="2.6" />
+    <circle cx="6" cy="6.6" r="0.5" />
+    <circle cx="9" cy="6.6" r="0.5" />
+    <circle cx="12" cy="6.6" r="0.5" />
+  </Base>
+);

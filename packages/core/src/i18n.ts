@@ -12,6 +12,7 @@ const ptBR = {
   "nav.acordes": "Acordes",
   "nav.companion": "Tocar junto",
   "nav.ferramentas": "Ferramentas",
+  "nav.amp": "Amp",
   "nav.ajustes": "Ajustes",
   "nav.laboratorio": "Laboratório",
 
@@ -103,6 +104,7 @@ const en: Record<MessageKey, string> = {
   "nav.acordes": "Chords",
   "nav.companion": "Play along",
   "nav.ferramentas": "Tools",
+  "nav.amp": "Amp",
   "nav.ajustes": "Settings",
   "nav.laboratorio": "Lab",
   "block.aquecimento": "Warm-up",

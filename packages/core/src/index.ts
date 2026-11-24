@@ -32,7 +32,10 @@ export * from "./saved-sequence";
 export * from "./music-transfer";
 
 export * from "./chromagram";
+export * from "./chord-recognition";
 
 export * from "./circle-of-fifths";
 
 export * from "./chart-guide";
+export * from "./exercise-guide";
+export * from "./amp-fx";

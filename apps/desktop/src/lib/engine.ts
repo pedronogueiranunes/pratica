@@ -145,11 +145,21 @@ export interface AmpStatus {
   ok: boolean;
 }
 
+export interface AmpMeters {
+  inPeak: number;
+  outPeak: number;
+  scopeIn: number[];
+  scopeOut: number[];
+}
+
 /** Amp (NAM) do desktop. Só existe no app do Mac. */
 export const amp = {
   pickModel: () => invoke<string | null>("amp_pick_model"),
-  start: (a: { deviceId: string; modelPath: string; inputChannel: number; outputChannel: number; frames: number; outputDb: number }) =>
+  start: (a: { deviceId: string; modelPath: string; inputChannel: number; outputChannel: number; frames: number; outputDb: number; mix: number; gainDb: number; fx: number[] }) =>
     invoke<AmpStatus["info"]>("amp_start", a),
+  fxSet: (values: number[]) => invoke<void>("amp_fx_set", { values }),
+  set: (mix: number, gainDb: number) => invoke<void>("amp_set", { mix, gainDb }),
+  meters: () => invoke<AmpMeters | null>("amp_meters"),
   stop: () => invoke<void>("amp_stop"),
   status: () => invoke<AmpStatus | null>("amp_status"),
 };

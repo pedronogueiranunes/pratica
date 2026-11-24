@@ -25,5 +25,6 @@ pub mod drums;
 mod realtime_test;
 #[cfg(feature = "io")]
 pub mod amp_io;
+pub mod fx;
 
 pub mod spectrum;

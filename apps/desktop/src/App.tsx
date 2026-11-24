@@ -12,12 +12,14 @@ import {
   IconSettings,
   IconToday,
   IconTools,
+  IconAmp,
 } from "./icons";
 import { Calendar } from "./screens/Calendar";
 import { usePractice } from "./lib/practice-state";
 import { Today } from "./screens/Today";
 import { Roadmap } from "./screens/Roadmap";
 import { Tools } from "./screens/Tools";
+import { Amp } from "./screens/Amp";
 import { Settings } from "./screens/Settings";
 import { Lab } from "./screens/Lab";
 import { Placeholder } from "./screens/Placeholder";
@@ -27,7 +29,7 @@ import { Chords, presetTrainer } from "./screens/Chords";
 import { NavContext } from "./lib/nav";
 import type { MessageKey } from "@gx/core";
 
-type Route = "exercicio" | "hoje" | "roadmap" | "calendario" | "musicas" | "acordes" | "companion" | "ferramentas" | "ajustes" | "laboratorio";
+type Route = "exercicio" | "hoje" | "roadmap" | "calendario" | "musicas" | "acordes" | "companion" | "ferramentas" | "amp" | "ajustes" | "laboratorio";
 
 const NAV: { id: Route; icon: ReactNode; key: MessageKey }[] = [
   { id: "hoje", icon: <IconToday />, key: "nav.hoje" },
@@ -37,6 +39,7 @@ const NAV: { id: Route; icon: ReactNode; key: MessageKey }[] = [
   { id: "acordes", icon: <IconChords />, key: "nav.acordes" },
   { id: "companion", icon: <IconCompanion />, key: "nav.companion" },
   { id: "ferramentas", icon: <IconTools />, key: "nav.ferramentas" },
+  ...(isNative ? [{ id: "amp" as Route, icon: <IconAmp />, key: "nav.amp" as MessageKey }] : []),
 ];
 const BOTTOM: { id: Route; icon: ReactNode; key: MessageKey }[] = [
   { id: "ajustes", icon: <IconSettings />, key: "nav.ajustes" },
@@ -105,7 +108,7 @@ export function App() {
   }, [m]);
 
   // No celular, a barra vira abas embaixo: as principais ficam à vista, o resto vai para "Mais".
-  const PRIMARY: Route[] = ["hoje", "roadmap", "musicas", "acordes", "ferramentas"];
+  const PRIMARY: Route[] = ["hoje", "roadmap", "musicas", "acordes", "ferramentas", "amp"];
   const [moreOpen, setMoreOpen] = useState(false);
   const isCurrent = (id: Route) => route === id || (route === "exercicio" && prevRoute === id);
   const navButton = (n: { id: Route; icon: ReactNode; key: MessageKey }, i: number) => (
@@ -151,6 +154,7 @@ export function App() {
         {route === "hoje" && <Today />}
         {route === "roadmap" && <Roadmap />}
         {route === "ferramentas" && <Tools />}
+        {route === "amp" && <Amp />}
         {route === "ajustes" && <Settings />}
         {route === "laboratorio" && <Lab />}
         {route === "calendario" && <Calendar />}
