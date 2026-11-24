@@ -868,6 +868,7 @@ version = "0.1.0"
 dependencies = [
  "audio-engine",
  "base64 0.22.1",
+ "nam-rs",
  "practice-store",
  "rand 0.9.5",
  "reqwest 0.12.28",
@@ -2397,6 +2398,17 @@ dependencies = [
  "serde",
  "thiserror 2.0.21",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "nam-rs"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cedc1ae256d0510dd48463bbd6df12a743bba06aa5a27270496c3d1d5b3bf886"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

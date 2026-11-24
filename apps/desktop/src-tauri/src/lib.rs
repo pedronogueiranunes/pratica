@@ -2,6 +2,7 @@
 //! integração. Não guarda regra de negócio: isso fica em `packages/core` e
 //! em `crates/audio-engine`.
 
+mod amp;
 mod spotify;
 mod storage;
 
@@ -9,7 +10,7 @@ use audio_engine::engine::{list_devices, start_engine, EngineHandle};
 use audio_engine::{rank, DeviceInfo, MetronomeSettings, Purpose, Recommendation};
 use tauri::{Emitter, Manager, State};
 
-struct Audio(EngineHandle);
+pub struct Audio(EngineHandle);
 
 #[tauri::command]
 fn audio_devices() -> Vec<DeviceInfo> {
@@ -97,6 +98,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(spotify::SpotifyState::default())
+        .manage(amp::AmpState::default())
         .setup(|app| {
             let data_dir = app.path().app_local_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
@@ -117,6 +119,10 @@ pub fn run() {
             audio_rank,
             audio_refresh,
             audio_measure,
+            amp::amp_pick_model,
+            amp::amp_start,
+            amp::amp_stop,
+            amp::amp_status,
             metronome_start,
             metronome_update,
             metronome_stop,

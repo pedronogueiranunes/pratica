@@ -128,3 +128,28 @@ export const spotify = {
     invoke<{ status: number; body: unknown }>("spotify_request", { method, path, body: body ?? null }),
   logout: () => invoke("spotify_logout"),
 };
+
+export interface AmpStatus {
+  running: boolean;
+  info: { modelName: string; sampleRate: number; frames: number; outputDb: number; inputChannel: number; outputChannel: number };
+  seconds: number;
+  loadAvgPercent: number;
+  loadMaxPercent: number;
+  processedFrames: number;
+  inputClips: number;
+  inputOverflows: number;
+  outputUnderruns: number;
+  resyncedSamples: number;
+  invalidSamples: number;
+  errorFlags: number;
+  ok: boolean;
+}
+
+/** Amp (NAM) do desktop. Só existe no app do Mac. */
+export const amp = {
+  pickModel: () => invoke<string | null>("amp_pick_model"),
+  start: (a: { deviceId: string; modelPath: string; inputChannel: number; outputChannel: number; frames: number; outputDb: number }) =>
+    invoke<AmpStatus["info"]>("amp_start", a),
+  stop: () => invoke<void>("amp_stop"),
+  status: () => invoke<AmpStatus | null>("amp_status"),
+};

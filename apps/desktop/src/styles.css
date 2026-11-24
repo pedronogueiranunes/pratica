@@ -2493,3 +2493,13 @@ button.chord-tile[aria-pressed="true"] {
 .chart-guide-state { font: 14px var(--font-mono); line-height: 1.7; }
 .chart .chart-chord-current { background: var(--accent); color: #161616; border-radius: 4px; outline: 2px solid var(--accent); text-decoration: none; }
 .chart-guide-board { margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--line); }
+
+/* Amp (NAM) */
+.amp-panel .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.amp-actions { margin-top: 12px; }
+.amp-error { color: #ff8a70; margin: 10px 0 0; }
+.amp-stats { display: grid; gap: 6px; margin: 14px 0 0; }
+.amp-stats > div { display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid var(--line, rgba(255,255,255,.08)); padding-top: 6px; }
+.amp-stats dt { color: var(--muted, #9a9a9a); }
+.amp-stats dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+@media (max-width: 720px) { .amp-panel select { min-height: 44px; } }
