@@ -3,11 +3,12 @@ import {
   alternativeChordShapes, chordInversions, chordVariations, chordVoicing, BEAT_OPTIONS, PRESET_PAIRS, changesPerMinute, chordFamily, chordTones, commonChordNames, keyUsesFlats, parseChord, shapesFor, trainerState,
   MAX_SEQUENCE_STEPS, type ChordSequenceStep, type Diagram,
 } from "@gx/core";
-import { engine, onEngine } from "../lib/engine";
+import { engine, isNative, onEngine } from "../lib/engine";
 import { ChordStaff } from "../components/ChordStaff";
 import { ChordSequence } from "./ChordSequence";
 import { useSequenceDraft } from "../lib/sequence-draft";
 import { ChordCard, ChordDiagram } from "../components/ChordDiagram";
+import { ChordListener } from "../components/ChordListener";
 import { useMetronome } from "../lib/metronome";
 import { usePractice } from "../lib/practice-state";
 import { useApp } from "../lib/app-state";
@@ -98,12 +99,13 @@ function Library({ onTrain, onAdd, canAdd, added }: { onTrain: (name: string) =>
   const baseName = parsed ? parsed.root + parsed.suffix : selectedName;
   const selected = detail?.shapes[formIndex];
   const voicing = selected ? chordVoicing(selected, settings.tuner.a4) : null;
-  const chooseName = (name: string) => {
+  const chooseName = (name: string, silent = false) => {
     setSelectedName(name); setFormIndex(0);
     generation.current++; void engine.stopPreview().catch(() => {});
-    if (soundOnSelect) void play(alternativeChordShapes(name)[0]);
+    if (soundOnSelect && !silent) void play(alternativeChordShapes(name)[0]);
   };
   return <div className="chord-library">
+    {isNative && <ChordListener flats={keyUsesFlats(parsed?.root ?? "C")} onDetect={(name) => { setOpen(name); chooseName(name, true); }} onPick={(name) => { setOpen(name); chooseName(name, true); }} />}
     <div className="chord-toolbar">
       <input type="search" placeholder="Buscar ou digitar um acorde, como Em7(9) ou D/F#" aria-label="Buscar acorde" value={query} onChange={(e) => setQuery(e.target.value)} />
       <div className="seg" role="group" aria-label="Tipo de acorde">
